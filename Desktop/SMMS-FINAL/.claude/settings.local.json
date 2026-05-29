@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mvn clean *)",
+      "Bash(psql -U postgres -c \"\\\\l\")",
+      "Bash(mvn spring-boot:run)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue)",
+      "Read(//c/Users/PC/AppData/Local/Temp/**)",
+      "Bash(for f in \"UserRole\" \"TicketStatus\" \"TicketPriority\" \"SubType\" \"ApprovalDecision\" \"ControlRoomType\"; do *)",
+      "Bash(curl -s http://localhost:9090/actuator/health)",
+      "Bash(curl -s -X POST http://localhost:9090/api/auth/login -H 'Content-Type: application/json' -d '{\"username\":\"sysadmin\",\"password\":\"Admin@1234\"}')",
+      "Bash(netstat -ano)",
+      "Bash(findstr :9090)",
+      "Bash(findstr LISTEN)",
+      "Bash(docker exec smms_postgres psql -U smms_user -d smms_db -c ' *)",
+      "Bash(mvn compile *)",
+      "Bash(taskkill //F //IM java.exe)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\nodejs\"; cd \"C:\\\\Users\\\\PC\\\\Desktop\\\\SMMS-FINAL\\\\frontend\"; npm run build 2>&1 | Select-String -Pattern \"Error|error TS|Failed|compiled\" | Select-Object -First 20)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 9090 -State Listen | Select-Object -ExpandProperty OwningProcess | ForEach-Object { Stop-Process -Id $_ -Force; \"Killed PID $_\" })",
+      "Bash(kill -9 15140)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

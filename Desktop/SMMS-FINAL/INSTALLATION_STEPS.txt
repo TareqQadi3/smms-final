@@ -1,0 +1,55 @@
+╔════════════════════════════════════════════════════════════════╗
+║                   نظام SMMS - خطوات التثبيت                   ║
+║                   SMMS System - Installation Steps            ║
+╚════════════════════════════════════════════════════════════════╝
+
+📋 خطوات سريعة جداً:
+
+1️⃣  حمّل Docker Desktop
+    → https://www.docker.com/products/docker-desktop/
+    → اختر Windows أو Mac
+    → ثبّت البرنامج بشكل عادي
+
+2️⃣  افتح Terminal/PowerShell هنا
+    → اضغط زر يمين على المجلد
+    → اختر "Open in Terminal"
+
+3️⃣  اكتب أمرين فقط:
+    → copy .env.example .env
+    → docker compose up -d
+
+4️⃣  انتظر دقيقتين
+
+5️⃣  افتح المتصفح:
+    → http://localhost
+
+6️⃣  سجّل دخول:
+    Username: sysadmin
+    Password: Admin@1234
+
+✅ خلص! النظام يشتغل 🎉
+
+════════════════════════════════════════════════════════════════
+
+مشاكل شائعة:
+
+❌ Docker لا يشتغل؟
+✅ ثبّت Docker Desktop + أعد التشغيل
+
+❌ Port مستخدم؟
+✅ اكتب: docker compose down -v
+   ثم: docker compose up -d
+
+❌ لا يفتح http://localhost؟
+✅ انتظر دقيقة كاملة بعد docker compose up
+
+════════════════════════════════════════════════════════════════
+
+ملفات مهمة:
+
+docker-compose.yml     ← ملف التشغيل (لا تغيره)
+.env.example          ← إعدادات (انسخه لـ .env)
+Makefile              ← أوامر مفيدة
+POSTMAN_COLLECTION.json ← اختبارات
+
+════════════════════════════════════════════════════════════════

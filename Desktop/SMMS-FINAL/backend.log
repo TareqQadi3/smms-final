@@ -1,0 +1,80 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -----------------------< com.smms:smms-backend >------------------------
+[INFO] Building SMMS Backend 1.0.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:3.3.0:run (default-cli) > test-compile @ smms-backend >>>
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ smms-backend ---
+[INFO] Copying 2 resources from src\main\resources to target\classes
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ smms-backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ smms-backend ---
+[INFO] skip non existing resourceDirectory C:\Users\PC\Desktop\SMMS-FINAL\backend-source\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ smms-backend ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] <<< spring-boot:3.3.0:run (default-cli) < test-compile @ smms-backend <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:3.3.0:run (default-cli) @ smms-backend ---
+[INFO] Attaching agents: []
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v3.3.0)
+
+2026-05-28T20:36:31.284+03:00  INFO 18192 --- [           main] com.smms.SmmsApplication                 : Starting SmmsApplication using Java 21.0.11 with PID 18192 (C:\Users\PC\Desktop\SMMS-FINAL\backend-source\target\classes started by PC in C:\Users\PC\Desktop\SMMS-FINAL\backend-source)
+2026-05-28T20:36:31.302+03:00 DEBUG 18192 --- [           main] com.smms.SmmsApplication                 : Running with Spring Boot v3.3.0, Spring v6.1.8
+2026-05-28T20:36:31.302+03:00  INFO 18192 --- [           main] com.smms.SmmsApplication                 : The following 1 profile is active: "dev"
+2026-05-28T20:36:44.539+03:00  WARN 18192 --- [           main] org.hibernate.orm.deprecation            : HHH90000025: PostgreSQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-05-28T20:36:50.839+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Warning Code: 0, SQLState: 00000
+2026-05-28T20:36:50.839+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : drop cascades to 2 other objects
+2026-05-28T20:36:50.851+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Warning Code: 0, SQLState: 00000
+2026-05-28T20:36:50.852+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : drop cascades to 2 other objects
+2026-05-28T20:36:50.869+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Warning Code: 0, SQLState: 00000
+2026-05-28T20:36:50.870+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : drop cascades to 2 other objects
+2026-05-28T20:36:50.883+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Warning Code: 0, SQLState: 00000
+2026-05-28T20:36:50.883+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : drop cascades to 2 other objects
+2026-05-28T20:36:50.894+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : SQL Warning Code: 0, SQLState: 00000
+2026-05-28T20:36:50.895+03:00  WARN 18192 --- [           main] o.h.engine.jdbc.spi.SqlExceptionHelper   : drop cascades to 2 other objects
+2026-05-28T20:36:54.950+03:00 DEBUG 18192 --- [           main] com.smms.security.JwtAuthFilter          : Filter 'jwtAuthFilter' configured for use
+2026-05-28T20:37:00.750+03:00  WARN 18192 --- [           main] r$InitializeUserDetailsManagerConfigurer : Global AuthenticationManager configured with an AuthenticationProvider bean. UserDetailsService beans will not be used for username/password login. Consider removing the AuthenticationProvider bean. Alternatively, consider using the UserDetailsService in a manually instantiated DaoAuthenticationProvider.
+2026-05-28T20:37:06.153+03:00  WARN 18192 --- [           main] ConfigServletWebServerApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Failed to start bean 'webServerStartStop'
+2026-05-28T20:37:06.340+03:00 ERROR 18192 --- [           main] o.s.b.d.LoggingFailureAnalysisReporter   : 
+
+***************************
+APPLICATION FAILED TO START
+***************************
+
+Description:
+
+Web server failed to start. Port 9090 was already in use.
+
+Action:
+
+Identify and stop the process that's listening on port 9090 or configure this application to listen on another port.
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  ??.??? s
+[INFO] Finished at: ????-??-??T??:??:??+03:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:3.3.0:run (default-cli) on project smms-backend: Process terminated with exit code: 1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException

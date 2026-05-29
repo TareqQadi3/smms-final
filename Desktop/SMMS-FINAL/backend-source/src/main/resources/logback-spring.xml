@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="smms"/>
+
+  <!-- ── Console appender with structured MDC fields ── -->
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%X{requestId:--}] [T:%X{tenantId:--}] [U:%X{userId:--}] %-5level %-40.40logger{39} : %msg%n</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <!-- ── Async wrapper to keep logs off the hot path ── -->
+  <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
+    <discardingThreshold>0</discardingThreshold>
+    <queueSize>512</queueSize>
+    <appender-ref ref="CONSOLE"/>
+  </appender>
+
+  <!-- ── Per-package levels ── -->
+  <root level="WARN">
+    <appender-ref ref="ASYNC_CONSOLE"/>
+  </root>
+
+  <logger name="com.smms"                    level="DEBUG" additivity="false">
+    <appender-ref ref="ASYNC_CONSOLE"/>
+  </logger>
+  <logger name="org.hibernate.SQL"           level="WARN"  additivity="false">
+    <appender-ref ref="ASYNC_CONSOLE"/>
+  </logger>
+  <logger name="org.springframework.security" level="WARN" additivity="false">
+    <appender-ref ref="ASYNC_CONSOLE"/>
+  </logger>
+
+  <!-- Silence noisy Hibernate warnings -->
+  <logger name="org.hibernate.orm.deprecation" level="ERROR" additivity="false">
+    <appender-ref ref="ASYNC_CONSOLE"/>
+  </logger>
+
+</configuration>

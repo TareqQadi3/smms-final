@@ -1,0 +1,345 @@
+{
+  "info": {
+    "name": "SMMS API Testing",
+    "description": "Complete test suite for SMMS Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"sysadmin\",\n  \"password\": \"Admin@1234\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/auth/login", "path": ["api", "auth", "login"]}
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "X-Refresh-Token", "value": "{{REFRESH_TOKEN}}"}],
+            "url": {"raw": "{{BASE_URL}}/api/auth/refresh", "path": ["api", "auth", "refresh"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Setup Test Users",
+      "item": [
+        {
+          "name": "Create Control Room User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"test_control_room\",\n  \"email\": \"test_cr@smms.sa\",\n  \"password\": \"Test@1234\",\n  \"fullName\": \"Test Control Room\",\n  \"fullNameAr\": \"اختبار غرفة التحكم\",\n  \"role\": \"control_room\",\n  \"centerId\": \"22222222-2222-2222-2222-222222222222\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/users", "path": ["api", "users"]}
+          }
+        },
+        {
+          "name": "Create Technician",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"test_technician\",\n  \"email\": \"test_tech@smms.sa\",\n  \"password\": \"Test@1234\",\n  \"fullName\": \"Test Technician\",\n  \"fullNameAr\": \"اختبار الفني\",\n  \"role\": \"technician\",\n  \"centerId\": \"22222222-2222-2222-2222-222222222222\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/users", "path": ["api", "users"]}
+          }
+        },
+        {
+          "name": "Create Warehouse",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"test_warehouse\",\n  \"email\": \"test_wh@smms.sa\",\n  \"password\": \"Test@1234\",\n  \"fullName\": \"Test Warehouse\",\n  \"fullNameAr\": \"اختبار المستودع\",\n  \"role\": \"warehouse\",\n  \"centerId\": \"22222222-2222-2222-2222-222222222222\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/users", "path": ["api", "users"]}
+          }
+        },
+        {
+          "name": "Create Approver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"test_approver\",\n  \"email\": \"test_app@smms.sa\",\n  \"password\": \"Test@1234\",\n  \"fullName\": \"Test Approver\",\n  \"fullNameAr\": \"اختبار الموافق\",\n  \"role\": \"operating_company_manager\",\n  \"centerId\": \"22222222-2222-2222-2222-222222222222\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/users", "path": ["api", "users"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Submit Ticket (Resident)",
+      "item": [
+        {
+          "name": "Login as Resident",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"sysadmin\",\n  \"password\": \"Admin@1234\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/auth/login", "path": ["api", "auth", "login"]}
+          }
+        },
+        {
+          "name": "Submit Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"controlRoomId\": \"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\n  \"subType\": \"electrical\",\n  \"title\": \"Broken electrical outlet in Room 101\",\n  \"description\": \"Outlet not working properly\",\n  \"locationDetail\": \"Room 101\",\n  \"priority\": \"high\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/work-orders", "path": ["api", "work-orders"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Workflow Transitions",
+      "item": [
+        {
+          "name": "Control Room: Review (NEW → UNDER_REVIEW)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{CR_TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetStatus\": \"under_review\",\n  \"note\": \"Ticket reviewed by control room\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/transition", "path": ["api", "work-orders", "{{TICKET_ID}}", "transition"]}
+          }
+        },
+        {
+          "name": "Control Room: Assign (UNDER_REVIEW → ASSIGNED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{CR_TOKEN}}"}
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/assign?technicianId={{TECH_ID}}&note=Assigned",
+              "path": ["api", "work-orders", "{{TICKET_ID}}", "assign"],
+              "query": [
+                {"key": "technicianId", "value": "{{TECH_ID}}"},
+                {"key": "note", "value": "Assigned"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Technician: Start Work (ASSIGNED → IN_PROGRESS)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TECH_TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetStatus\": \"in_progress\",\n  \"scheduledDate\": \"2026-05-28T10:00:00Z\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/transition", "path": ["api", "work-orders", "{{TICKET_ID}}", "transition"]}
+          }
+        },
+        {
+          "name": "Technician: Request Materials (IN_PROGRESS → WAITING_MATERIALS)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TECH_TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetStatus\": \"waiting_materials\",\n  \"note\": \"Need replacement outlet - 220V compatible\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/transition", "path": ["api", "work-orders", "{{TICKET_ID}}", "transition"]}
+          }
+        },
+        {
+          "name": "Warehouse: Send for Approval (WAITING_MATERIALS → WAITING_APPROVAL)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{WH_TOKEN}}"}
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/warehouse?materialsAvailable=false&notes=Outlet in stock - needs approval",
+              "path": ["api", "work-orders", "{{TICKET_ID}}", "warehouse"],
+              "query": [
+                {"key": "materialsAvailable", "value": "false"},
+                {"key": "notes", "value": "Outlet in stock - needs approval"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Approver: Approve (WAITING_APPROVAL → IN_PROGRESS LOOP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{APPROVER_TOKEN}}"}
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/approval?decision=approved&note=Approved for use",
+              "path": ["api", "work-orders", "{{TICKET_ID}}", "approval"],
+              "query": [
+                {"key": "decision", "value": "approved"},
+                {"key": "note", "value": "Approved for use"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Technician: Complete (IN_PROGRESS → COMPLETED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{TECH_TOKEN}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetStatus\": \"completed\",\n  \"note\": \"Outlet replaced successfully. Tested and working.\"\n}"
+            },
+            "url": {"raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/transition", "path": ["api", "work-orders", "{{TICKET_ID}}", "transition"]}
+          }
+        },
+        {
+          "name": "Control Room: Close (COMPLETED → CLOSED)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Authorization", "value": "Bearer {{CR_TOKEN}}"}
+            ],
+            "url": {
+              "raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/close?note=Ticket closed",
+              "path": ["api", "work-orders", "{{TICKET_ID}}", "close"],
+              "query": [{"key": "note", "value": "Ticket closed"}]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Query & Reporting",
+      "item": [
+        {
+          "name": "Search Work Orders",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{TOKEN}}"}],
+            "url": {
+              "raw": "{{BASE_URL}}/api/work-orders?centerId=22222222-2222-2222-2222-222222222222&status=closed",
+              "path": ["api", "work-orders"],
+              "query": [
+                {"key": "centerId", "value": "22222222-2222-2222-2222-222222222222"},
+                {"key": "status", "value": "closed"}
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Ticket History",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{TOKEN}}"}],
+            "url": {"raw": "{{BASE_URL}}/api/work-orders/{{TICKET_ID}}/history", "path": ["api", "work-orders", "{{TICKET_ID}}", "history"]}
+          }
+        },
+        {
+          "name": "Control Room Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{CR_TOKEN}}"}],
+            "url": {"raw": "{{BASE_URL}}/api/dashboard/control-room", "path": ["api", "dashboard", "control-room"]}
+          }
+        },
+        {
+          "name": "Technician Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{TECH_TOKEN}}"}],
+            "url": {"raw": "{{BASE_URL}}/api/dashboard/technician", "path": ["api", "dashboard", "technician"]}
+          }
+        },
+        {
+          "name": "Management Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{TOKEN}}"}],
+            "url": {"raw": "{{BASE_URL}}/api/dashboard/management", "path": ["api", "dashboard", "management"]}
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Notifications",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{TOKEN}}"}],
+            "url": {"raw": "{{BASE_URL}}/api/notifications", "path": ["api", "notifications"]}
+          }
+        },
+        {
+          "name": "Unread Count",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{TOKEN}}"}],
+            "url": {"raw": "{{BASE_URL}}/api/notifications/unread-count", "path": ["api", "notifications", "unread-count"]}
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {"key": "BASE_URL", "value": "http://localhost:8080"},
+    {"key": "TOKEN", "value": ""},
+    {"key": "REFRESH_TOKEN", "value": ""},
+    {"key": "CR_TOKEN", "value": ""},
+    {"key": "TECH_TOKEN", "value": ""},
+    {"key": "WH_TOKEN", "value": ""},
+    {"key": "APPROVER_TOKEN", "value": ""},
+    {"key": "TICKET_ID", "value": ""},
+    {"key": "TECH_ID", "value": ""}
+  ]
+}

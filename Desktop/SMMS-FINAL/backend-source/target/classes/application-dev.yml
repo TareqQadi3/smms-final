@@ -1,0 +1,74 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/smms_db
+    username: smms_user
+    password: smms_dev_2024
+    hikari:
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: Asia/Riyadh
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: redis_dev_2024
+      timeout: 3000ms
+
+  mail:
+    host: localhost
+    port: 1025
+    username: ""
+    password: ""
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+  health:
+    mail:
+      enabled: false
+    redis:
+      enabled: false
+
+app:
+  jwt:
+    secret: dGhpcy1pcy1hLXZlcnktbG9uZy1zZWNyZXQta2V5LWZvci1zbW1zLWRldi0yMDI0LXVzZS1pbi1wcm9kdWN0aW9uLTEyMw==
+    expiry-hours: 8
+    refresh-expiry-days: 7
+  upload:
+    path: ./uploads
+    allowed-extensions: jpg,jpeg,png,pdf,doc,docx
+  sla:
+    critical: 4
+    high: 8
+    medium: 24
+    low: 48
+  base-url: http://localhost:9090
+
+logging:
+  level:
+    root: WARN
+    com.smms: DEBUG
+    org.hibernate.SQL: WARN
+    org.springframework.security: WARN
