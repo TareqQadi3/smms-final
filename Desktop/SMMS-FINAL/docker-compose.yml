@@ -29,8 +29,6 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
@@ -41,19 +39,21 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: ./backend-source
       dockerfile: Dockerfile
     container_name: smms_backend
     restart: unless-stopped
     env_file: .env
     environment:
       DB_HOST: postgres
+      DB_PORT: 5432
       REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVER_PORT: 8080
+      SPRING_PROFILES_ACTIVE: prod
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs
-    ports:
-      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,17 +66,26 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ${VITE_API_URL}
     container_name: smms_frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    depends_on:
+      - backend
+    networks:
+      - smms_net
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: smms_nginx
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
+      - frontend
       - backend
     networks:
       - smms_net
