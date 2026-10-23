@@ -14,7 +14,9 @@ import com.smms.repository.TenantSubscriptionRepository;
 import com.smms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +32,10 @@ public class DataInitializer implements CommandLineRunner {
     private final MaintenanceTypeRepository maintenanceTypeRepo;
     private final TenantRepository tenantRepo;
     private final TenantSubscriptionRepository subscriptionRepo;
+    private final JdbcTemplate jdbc;
+
+    @Value("${SMMS_INITIAL_ADMIN_PASSWORD:}")
+    private String initialAdminPassword;
 
     @Override
     public void run(String... args) {
@@ -104,28 +110,50 @@ public class DataInitializer implements CommandLineRunner {
         log.info("Seeded {} default maintenance types", defaults.size());
     }
 
+    /** Public default of the seeded admin, kept for installs that do not set an initial password. */
+    static final String LEGACY_DEFAULT_PASSWORD = "Admin@1234";
+
+    /**
+     * Creates the `admin` account only when no row named admin exists AT ALL, soft-deleted ones
+     * included: deleting the admin must not bring it back at the next start with a public password.
+     * The password comes from SMMS_INITIAL_ADMIN_PASSWORD (never logged); without it the legacy
+     * default is used and the account is flagged must_change_password. Existing accounts are never
+     * touched.
+     */
     private void createAdminIfAbsent() {
-        if (userRepo.existsByUsernameAndDeletedAtIsNull("admin")) {
-            log.info("Admin account already exists — skipping seed");
+        Integer existing = jdbc.queryForObject(
+            "SELECT count(*) FROM users WHERE lower(username) = 'admin'", Integer.class);
+        if (existing != null && existing > 0) {
+            log.info("Admin account already exists (or was deleted) — skipping seed");
             return;
         }
+
+        String configured = initialAdminPassword == null ? "" : initialAdminPassword;
+        boolean useConfigured = !configured.isEmpty();
+        if (useConfigured && (configured.length() < 12 || configured.length() > 128)) {
+            log.error("SMMS_INITIAL_ADMIN_PASSWORD must be 12-128 characters: admin account NOT created");
+            return;
+        }
+        String password = useConfigured ? configured : LEGACY_DEFAULT_PASSWORD;
 
         User admin = User.builder()
             .username("admin")
             .email("admin@smms.local")
-            .passwordHash(passwordEncoder.encode("Admin@1234"))
+            .passwordHash(passwordEncoder.encode(password))
             .fullName("System Administrator")
             .fullNameAr("مدير النظام")
             .role(UserRole.system_admin)
             .isActive(true)
+            .mustChangePassword(!useConfigured)
             .build();
         // tenantId remains null — platform admin has no tenant restriction
 
         userRepo.save(admin);
         log.info("=================================================");
-        log.info("  Default admin account created:");
-        log.info("  Username : admin");
-        log.info("  Please change the password after first login!");
+        log.info("  Admin account created: username 'admin'");
+        log.info(useConfigured
+            ? "  Password: the value of SMMS_INITIAL_ADMIN_PASSWORD"
+            : "  Password: the public default. Sign in and change it now!");
         log.info("=================================================");
     }
 }

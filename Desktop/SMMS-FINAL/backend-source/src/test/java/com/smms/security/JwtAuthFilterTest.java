@@ -2,6 +2,7 @@ package com.smms.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smms.cache.SubscriptionCache;
+import com.smms.auth.SessionTestSupport;
 import com.smms.entity.User;
 import com.smms.enums.UserRole;
 import com.smms.repository.TenantSubscriptionRepository;
@@ -29,10 +30,12 @@ class JwtAuthFilterTest {
     private JwtService jwtService;
     private JwtAuthFilter filter;
     private User user;
+    private SessionTestSupport sessions;
 
     @BeforeEach
     void setUp() {
         SecurityContextHolder.clearContext();
+        sessions = new SessionTestSupport();
         jwtService = new JwtService();
         ReflectionTestUtils.setField(jwtService, "secret", TEST_SECRET);
         ReflectionTestUtils.setField(jwtService, "expiryHours", 8L);
@@ -47,7 +50,7 @@ class JwtAuthFilterTest {
         UserDetailsService uds = mock(UserDetailsService.class);
         when(uds.loadUserByUsername("tech1")).thenReturn(user);
         filter = new JwtAuthFilter(jwtService, uds, mock(TenantSubscriptionRepository.class),
-            mock(SubscriptionCache.class), new ObjectMapper());
+            mock(SubscriptionCache.class), new ObjectMapper().findAndRegisterModules(), sessions.service);
     }
 
     @AfterEach
@@ -131,5 +134,127 @@ class JwtAuthFilterTest {
         ReflectionTestUtils.setField(other, "secret", Base64.getEncoder().encodeToString(k));
         ReflectionTestUtils.setField(other, "expiryHours", 8L);
         assertThat(authenticatedWith(other.generateToken(user))).isFalse();
+    }
+
+    // ── P4: account state, sessions, invalidation ───────────────
+
+    private com.smms.entity.AuthSession session() {
+        return sessions.service.create(user, "jti", java.time.Instant.now().plusSeconds(3600));
+    }
+
+    @Test
+    void tokenBoundToALiveSessionAuthenticates() throws Exception {
+        assertThat(authenticatedWith(jwtService.generateToken(user, session().getId()))).isTrue();
+    }
+
+    @Test
+    void tokenOfARevokedSessionIsRejected() throws Exception {
+        var s = session();
+        String token = jwtService.generateToken(user, s.getId());
+        assertThat(authenticatedWith(token)).isTrue();
+        SecurityContextHolder.clearContext();
+        sessions.service.revoke(s, "logout");
+        assertThat(authenticatedWith(token)).isFalse();
+    }
+
+    @Test
+    void tokenOfAnExpiredSessionIsRejected() throws Exception {
+        var s = session();
+        s.setExpiresAt(java.time.Instant.now().minusSeconds(1));
+        assertThat(authenticatedWith(jwtService.generateToken(user, s.getId()))).isFalse();
+    }
+
+    @Test
+    void tokenWithUnknownSessionIsRejected() throws Exception {
+        assertThat(authenticatedWith(jwtService.generateToken(user, java.util.UUID.randomUUID()))).isFalse();
+    }
+
+    @Test
+    void tokenBoundToASessionOfAnotherUserIsRejected() throws Exception {
+        User other = SessionTestSupport.user(UserRole.technician);
+        var foreign = sessions.service.create(other, "j", java.time.Instant.now().plusSeconds(3600));
+        assertThat(authenticatedWith(jwtService.generateToken(user, foreign.getId()))).isFalse();
+    }
+
+    @Test
+    void legacyTokenWithoutSessionStillWorksUntilItsOwnExpiry() throws Exception {
+        assertThat(authenticatedWith(jwtService.generateToken(user))).isTrue();
+    }
+
+    @Test
+    void deactivatedUserIsRejected() throws Exception {
+        String token = jwtService.generateToken(user, session().getId());
+        user.setActive(false);
+        assertThat(authenticatedWith(token)).isFalse();
+    }
+
+    @Test
+    void softDeletedUserIsRejected() throws Exception {
+        String token = jwtService.generateToken(user, session().getId());
+        user.setDeletedAt(java.time.Instant.now());
+        assertThat(authenticatedWith(token)).isFalse();
+    }
+
+    @Test
+    void tokenForAnAccountThatNoLongerExistsContinuesUnauthenticatedWithoutThrowing() throws Exception {
+        String token = jwtService.generateToken(user);
+        UserDetailsService gone = mock(UserDetailsService.class);
+        when(gone.loadUserByUsername("tech1")).thenThrow(
+            new org.springframework.security.core.userdetails.UsernameNotFoundException("x"));
+        filter = new JwtAuthFilter(jwtService, gone, mock(TenantSubscriptionRepository.class),
+            mock(SubscriptionCache.class), new ObjectMapper(), sessions.service);
+        assertThat(authenticatedWith(token)).isFalse();
+    }
+
+    @Test
+    void tokenIssuedBeforeTheInvalidationInstantIsRejectedAndALaterOneIsNot() throws Exception {
+        String old = jwtService.generateToken(user);
+        Thread.sleep(1100);
+        user.setTokensValidAfter(java.time.Instant.now());
+        assertThat(authenticatedWith(old)).isFalse();
+        Thread.sleep(1100);
+        assertThat(authenticatedWith(jwtService.generateToken(user))).isTrue();
+    }
+
+    @Test
+    void sessionIdIsExposedToControllersAsARequestAttribute() throws Exception {
+        var s = session();
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/users/me");
+        req.addHeader("Authorization", "Bearer " + jwtService.generateToken(user, s.getId()));
+        filter.doFilter(req, new MockHttpServletResponse(), mock(FilterChain.class));
+        assertThat(req.getAttribute(JwtAuthFilter.REQ_ATTR_SID)).isEqualTo(s.getId());
+    }
+
+    // ── hard mode of the default-password policy ────────────────
+
+    private int statusFor(String path, boolean hardMode, boolean mustChange) throws Exception {
+        SecurityContextHolder.clearContext();
+        ReflectionTestUtils.setField(filter, "enforcePasswordChange", hardMode);
+        user.setMustChangePassword(mustChange);
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", path);
+        req.setRequestURI(path);
+        req.addHeader("Authorization", "Bearer " + jwtService.generateToken(user, session().getId()));
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        filter.doFilter(req, res, mock(FilterChain.class));
+        return res.getStatus();
+    }
+
+    @Test
+    void passwordChangeIsSoftByDefault() throws Exception {
+        assertThat(statusFor("/api/work-orders", false, true)).isEqualTo(200);
+    }
+
+    @Test
+    void hardModeBlocksEverythingButTheChangePasswordFlow() throws Exception {
+        assertThat(statusFor("/api/work-orders", true, true)).isEqualTo(403);
+        assertThat(statusFor("/api/users", true, true)).isEqualTo(403);
+        assertThat(statusFor("/api/users/me", true, true)).isEqualTo(200);
+        assertThat(statusFor("/api/users/me/change-password", true, true)).isEqualTo(200);
+        assertThat(statusFor("/api/auth/logout", true, true)).isEqualTo(200);
+    }
+
+    @Test
+    void hardModeDoesNotAffectAccountsWithoutTheFlag() throws Exception {
+        assertThat(statusFor("/api/work-orders", true, false)).isEqualTo(200);
     }
 }

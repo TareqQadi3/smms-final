@@ -82,6 +82,15 @@ public class User extends BaseEntity implements UserDetails {
     @Column(name = "last_login")
     private Instant lastLogin;
 
+    /** Soft flag: the client should send the user to the change-password screen. */
+    @Column(name = "must_change_password", nullable = false)
+    @Builder.Default
+    private boolean mustChangePassword = false;
+
+    /** Tokens issued before this instant are refused (deactivation, admin password reset). */
+    @Column(name = "tokens_valid_after")
+    private Instant tokensValidAfter;
+
     @Override public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
     }

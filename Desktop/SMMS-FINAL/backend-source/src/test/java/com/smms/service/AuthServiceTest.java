@@ -1,6 +1,8 @@
 package com.smms.service;
 
 import com.smms.dto.request.LoginRequest;
+import com.smms.auth.AuthSessionService;
+import com.smms.auth.SessionTestSupport;
 import com.smms.entity.User;
 import com.smms.enums.UserRole;
 import com.smms.exception.AccountLockedException;
@@ -24,6 +26,7 @@ class AuthServiceTest {
 
     private UserRepository userRepo;
     private JwtService jwtService;
+    private SessionTestSupport sessions;
     private PasswordEncoder encoder;
     private BruteForceProtectionService bruteForce;
     private AuthService service;
@@ -33,12 +36,14 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         userRepo = mock(UserRepository.class);
-        jwtService = mock(JwtService.class);
+        jwtService = SessionTestSupport.jwt();
+        sessions = new SessionTestSupport();
         encoder = mock(PasswordEncoder.class);
         bruteForce = mock(BruteForceProtectionService.class);
-        service = new AuthService(userRepo, mock(TenantRepository.class), jwtService, encoder, bruteForce);
+        service = new AuthService(userRepo, mock(TenantRepository.class), jwtService, encoder, bruteForce, sessions.service);
 
         user = new User();
+        user.setId(java.util.UUID.randomUUID());
         user.setUsername("tech1");
         user.setPasswordHash("hash");
         user.setRole(UserRole.technician);
@@ -78,18 +83,16 @@ class AuthServiceTest {
     @Test
     void successResetsCounter() {
         when(encoder.matches("pw", "hash")).thenReturn(true);
-        when(jwtService.generateToken(user)).thenReturn("a");
-        when(jwtService.generateRefreshToken(user)).thenReturn("r");
-        assertThat(service.login(req).getToken()).isEqualTo("a");
+        assertThat(service.login(req).getToken()).isNotBlank();
         verify(bruteForce).recordSuccess("tech1");
         verify(bruteForce, never()).recordFailure(any());
     }
 
     @Test
     void refreshRejectsNonRefreshToken() {
-        when(jwtService.isRefreshToken("access")).thenReturn(false);
-        assertThatThrownBy(() -> service.refresh("access")).isInstanceOf(AuthException.class);
-        verify(jwtService, never()).generateToken(any());
+        String access = jwtService.generateToken(user);
+        assertThatThrownBy(() -> service.refresh(access)).isInstanceOf(AuthException.class);
+        assertThat(sessions.store).isEmpty();
     }
 
     @Test
@@ -98,8 +101,7 @@ class AuthServiceTest {
         when(encoder.matches("pw", "hash")).thenReturn(true);
         assertThatThrownBy(() -> service.login(req)).isInstanceOf(AuthException.class)
             .hasMessage("Invalid credentials");
-        verify(jwtService, never()).generateToken(any());
-        verify(jwtService, never()).generateRefreshToken(any());
+        assertThat(sessions.store).isEmpty(); // no session, so no token was issued
     }
 
     @Test
@@ -107,18 +109,15 @@ class AuthServiceTest {
         user.setRole(UserRole.system_admin);
         user.setTenantId(null);
         when(encoder.matches("pw", "hash")).thenReturn(true);
-        when(jwtService.generateToken(user)).thenReturn("a");
-        assertThat(service.login(req).getToken()).isEqualTo("a");
+        assertThat(service.login(req).getToken()).isNotBlank();
     }
 
     @Test
     void refreshIsRefusedForNonAdminWithoutTenant() {
+        when(encoder.matches("pw", "hash")).thenReturn(true);
+        String refresh = service.login(req).getRefreshToken();
         user.setTenantId(null);
-        when(jwtService.isRefreshToken("r")).thenReturn(true);
-        when(jwtService.extractUsername("r")).thenReturn("tech1");
-        when(jwtService.isTokenValid("r", user)).thenReturn(true);
-        assertThatThrownBy(() -> service.refresh("r")).isInstanceOf(AuthException.class);
-        verify(jwtService, never()).generateToken(any());
+        assertThatThrownBy(() -> service.refresh(refresh)).isInstanceOf(AuthException.class);
     }
 
     @Test
@@ -136,14 +135,13 @@ class AuthServiceTest {
         when(encoder.matches("pw", "hash")).thenReturn(true);
         assertThatThrownBy(() -> service.login(req)).isInstanceOf(AuthException.class);
         user.setTenantId(java.util.UUID.randomUUID()); // admin assigned a tenant
-        when(jwtService.generateToken(user)).thenReturn("fresh");
-        assertThat(service.login(req).getToken()).isEqualTo("fresh");
+        assertThat(service.login(req).getToken()).isNotBlank();
     }
 
     @Test
     void inactiveAccountIsRefusedBeforeAnyTokenIsIssued() {
         user.setActive(false);
         assertThatThrownBy(() -> service.login(req)).isInstanceOf(AuthException.class);
-        verify(jwtService, never()).generateToken(any());
+        assertThat(sessions.store).isEmpty();
     }
 }

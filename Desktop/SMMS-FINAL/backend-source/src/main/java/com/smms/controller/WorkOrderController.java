@@ -193,12 +193,42 @@ public class WorkOrderController {
         return ResponseEntity.ok(workOrderService.getHistory(id, actor));
     }
 
+    /**
+     * Optional Idempotency-Key header: a retry with the same key and files returns 200 with
+     * Idempotent-Replayed: true and creates nothing; the same key with other files is 422.
+     */
     @PostMapping("/{id}/attachments")
-    public ResponseEntity<Void> upload(@PathVariable UUID id,
-                                       @RequestParam("file") List<MultipartFile> files,
-                                       @CurrentUser User actor) {
-        attachmentService.upload(id, files, actor);
-        return ResponseEntity.status(HttpStatus.CREATED).build();
+    public ResponseEntity<?> upload(@PathVariable UUID id,
+                                    @RequestParam("file") List<MultipartFile> files,
+                                    @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                    @CurrentUser User actor) {
+        return switch (attachmentService.upload(id, files, actor, idempotencyKey)) {
+            case CREATED -> ResponseEntity.status(HttpStatus.CREATED).build();
+            case REPLAYED -> ResponseEntity.ok().header("Idempotent-Replayed", "true").build();
+            case KEY_REUSED -> ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(
+                new com.smms.exception.GlobalExceptionHandler.ErrorBody(422,
+                    "Idempotency-Key was already used with a different request", java.time.Instant.now()));
+        };
+    }
+
+    /** Always a download (attachment), with a server-derived content type and no sniffing or caching. */
+    @GetMapping("/{id}/attachments/{attId}/content")
+    public ResponseEntity<org.springframework.core.io.Resource> download(@PathVariable UUID id,
+                                                                         @PathVariable UUID attId,
+                                                                         @CurrentUser User actor) {
+        AttachmentService.Download d = attachmentService.download(id, attId, actor);
+        String safeName = d.fileName().replaceAll("[\\p{Cntrl}\\\\/\"]", "_");
+        return ResponseEntity.ok()
+            .contentType(org.springframework.http.MediaType.parseMediaType(d.contentType()))
+            .contentLength(d.size())
+            .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                org.springframework.http.ContentDisposition.attachment()
+                    .filename(safeName, java.nio.charset.StandardCharsets.UTF_8).build().toString())
+            .header("X-Content-Type-Options", "nosniff")
+            .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "private, no-store")
+            .header("Content-Security-Policy", "default-src 'none'; sandbox")
+            .header("Cross-Origin-Resource-Policy", "same-origin")
+            .body(new org.springframework.core.io.FileSystemResource(d.path()));
     }
 
     @GetMapping("/{id}/attachments")

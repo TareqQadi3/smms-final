@@ -221,4 +221,43 @@ class JwtServiceTest {
         assertThat(JwtService.sha256Hex("abc"))
             .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
+
+    // ── P4: sessions ───────────────────────────────────────────
+
+    @Test
+    void sessionBoundAccessTokenCarriesSid() {
+        UUID sid = UUID.randomUUID();
+        String t = jwtService.generateToken(user, sid);
+        assertThat(jwtService.extractSessionId(t)).isEqualTo(sid);
+        assertThat(jwtService.isAccessToken(t)).isTrue();
+    }
+
+    @Test
+    void legacyAccessTokenHasNoSid() {
+        assertThat(jwtService.extractSessionId(jwtService.generateToken(user))).isNull();
+    }
+
+    @Test
+    void sessionRefreshTokenCarriesSidJtiAndAbsoluteExpiry() {
+        UUID sid = UUID.randomUUID();
+        java.time.Instant end = java.time.Instant.now().plusSeconds(1000);
+        String t = jwtService.generateRefreshToken(user, sid, "jti-123", end);
+        assertThat(jwtService.isRefreshToken(t)).isTrue();
+        assertThat(jwtService.isAccessToken(t)).isFalse();
+        assertThat(jwtService.extractSessionId(t)).isEqualTo(sid);
+        assertThat(jwtService.extractJti(t)).isEqualTo("jti-123");
+        assertThat(jwtService.extractExpiration(t).getEpochSecond()).isEqualTo(end.getEpochSecond());
+        assertThat(jwtService.extractIssuedAt(t)).isNotNull();
+    }
+
+    @Test
+    void parseAllowExpiredReturnsClaimsOfExpiredButSignedTokensOnly() {
+        UUID sid = UUID.randomUUID();
+        String expired = jwtService.generateRefreshToken(user, sid, "j", java.time.Instant.now().minusSeconds(5));
+        assertThatThrownBy(() -> jwtService.extractSessionId(expired)).isInstanceOf(io.jsonwebtoken.JwtException.class);
+        assertThat(jwtService.parseAllowExpired(expired)).isPresent();
+        assertThat(jwtService.parseAllowExpired(expired).get().get("sid")).isEqualTo(sid.toString());
+        assertThat(jwtService.parseAllowExpired("garbage")).isEmpty();
+        assertThat(jwtService.parseAllowExpired(expired.substring(0, expired.length() - 3) + "abc")).isEmpty();
+    }
 }
