@@ -48,7 +48,8 @@ class MigrationScriptsTest {
         for (String f : List.of("V1__init.sql", "V2__schema_migration.sql", "V3__user_role_other.sql",
                 "V4__tenant_backfill_parents.sql", "V5__child_tenant_backfill.sql",
                 "V6__child_tenant_constraints.sql", "V7__default_tenant_seed_hierarchy.sql",
-                "V8__username_case_insensitive_unique.sql")) {
+                "V8__username_case_insensitive_unique.sql",
+                "V9__rederive_tenant_after_seed.sql", "V10__tenant_diagnostics_views.sql")) {
             assertThat(MigrationScriptsTest.class.getResource("/db/migration/" + f)).as(f).isNotNull();
         }
     }
@@ -67,7 +68,8 @@ class MigrationScriptsTest {
     void migrationsAreTransactionalAndNeverDestructive() throws Exception {
         for (String f : List.of("V3__user_role_other.sql", "V4__tenant_backfill_parents.sql",
                 "V5__child_tenant_backfill.sql", "V6__child_tenant_constraints.sql",
-                "V7__default_tenant_seed_hierarchy.sql", "V8__username_case_insensitive_unique.sql")) {
+                "V7__default_tenant_seed_hierarchy.sql", "V8__username_case_insensitive_unique.sql",
+                "V9__rederive_tenant_after_seed.sql", "V10__tenant_diagnostics_views.sql")) {
             String sql = new String(resource(f)).toLowerCase();
             assertThat(sql).as(f).doesNotContain("drop table").doesNotContain("truncate")
                 .doesNotContain("delete from").doesNotContain("concurrently");
@@ -83,6 +85,70 @@ class MigrationScriptsTest {
             if (stmt.contains("update ")) {
                 assertThat(stmt).contains("tenant_id is null");
                 assertThat(stmt.contains("'11111111-1111") || stmt.contains("'22222222-2222")).isTrue();
+            }
+        }
+    }
+
+    private static String stripComments(String sql) {
+        return sql.replaceAll("(?m)--.*$", "");
+    }
+
+    @Test
+    void v9OnlyFillsNullTenantsFromParentsAndNeverUsesADefaultTenant() throws Exception {
+        String sql = stripComments(new String(resource("V9__rederive_tenant_after_seed.sql"))).toLowerCase();
+        assertThat(sql).doesNotContain("default").doesNotContain("limit 1").doesNotContain("set tenant_id = '")
+            .doesNotContain("is distinct from").doesNotContain("insert into").doesNotContain("drop ")
+            .doesNotContain("delete from").doesNotContain("truncate");
+        int updates = 0;
+        for (String stmt : sql.split(";")) {
+            // the notifications update carries its subquery; the outer statement guards on n.tenant_id
+            if (stmt.trim().startsWith("update ")) {
+                updates++;
+                assertThat(stmt).as(stmt).contains("tenant_id is null");
+                // never assigns NULL or a literal; the value always comes from a joined parent
+                assertThat(stmt).doesNotContain("tenant_id = null");
+            }
+        }
+        assertThat(updates).isEqualTo(12);
+    }
+
+    @Test
+    void v10IsReadOnlyAndHasNoSelectStar() throws Exception {
+        String sql = stripComments(new String(resource("V10__tenant_diagnostics_views.sql"))).toLowerCase();
+        assertThat(sql).doesNotContain("update ").doesNotContain("insert ").doesNotContain("delete from")
+            .doesNotContain("alter ").doesNotContain("drop ").doesNotContain("truncate")
+            .doesNotContain("select *").doesNotContain(".*");
+        assertThat(sql).contains("create or replace view diag_tenant_mismatch")
+            .contains("create or replace view diag_tenant_null").contains("function diag_tenant_summary")
+            .contains("stable");
+    }
+
+    @Test
+    void v10CheckNamesMatchTheServiceWhitelist() throws Exception {
+        String sql = new String(resource("V10__tenant_diagnostics_views.sql"));
+        java.util.Set<String> names = new java.util.LinkedHashSet<>();
+        var m = java.util.regex.Pattern.compile("SELECT '([a-z_]+)'::text( AS check_name)?").matcher(sql);
+        while (m.find()) {
+            // the first literal of each select in diag_tenant_mismatch is the check name; the null view
+            // uses "AS table_name" instead and is excluded by the section split
+            names.add(m.group(1));
+        }
+        String mismatchView = sql.substring(sql.indexOf("diag_tenant_mismatch AS"), sql.indexOf("diag_tenant_null AS"));
+        java.util.Set<String> inMismatch = new java.util.LinkedHashSet<>();
+        var m2 = java.util.regex.Pattern.compile("SELECT '([a-z_]+)'::text").matcher(mismatchView);
+        while (m2.find()) inMismatch.add(m2.group(1));
+        assertThat(inMismatch).containsExactlyInAnyOrderElementsOf(
+            com.smms.diagnostics.TenantDiagnosticsService.CHECKS);
+        assertThat(com.smms.diagnostics.TenantDiagnosticsService.CHECKS).doesNotHaveDuplicates();
+    }
+
+    @Test
+    void migrationVersionsHaveNoGapsUpToTen() throws Exception {
+        for (int v = 1; v <= 10; v++) {
+            final int version = v;
+            try (Stream<Path> files = Files.list(Path.of("src/main/resources/db/migration"))) {
+                assertThat(files.filter(p -> p.getFileName().toString().startsWith("V" + version + "__")).count())
+                    .as("V" + version).isEqualTo(1);
             }
         }
     }
