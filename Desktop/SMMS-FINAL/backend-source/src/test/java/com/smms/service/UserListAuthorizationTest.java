@@ -52,7 +52,7 @@ class UserListAuthorizationTest {
         userRepo = mock(UserRepository.class);
         service = new UserService(userRepo, mock(UserControlRoomAccessRepository.class),
             mock(PasswordEncoder.class), mock(UserMapper.class), mock(PlanEnforcementService.class),
-            mock(TenantSecurityService.class), new AdminScopePolicy(mock(TenantRepository.class)));
+            mock(TenantSecurityService.class), new AdminScopePolicy(mock(TenantRepository.class)), new UserAccountValidator());
         when(userRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
     }
 

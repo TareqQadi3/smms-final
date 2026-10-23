@@ -32,7 +32,30 @@ public class CenterService {
     private final AdminScopePolicy policy;
 
     @Transactional(readOnly = true)
-    public List<CenterResponse> list(UUID regionId) {
+    public List<CenterResponse> list(UUID regionId, User actor) {
+        if (actor == null || actor.getRole() == UserRole.system_admin) return listAll(regionId);
+        if (actor.getRole() == UserRole.region_supervisor) {
+            // Own region only; asking for another region matches nothing
+            UUID own = actor.getRegion() != null ? actor.getRegion().getId() : null;
+            if (own == null || (regionId != null && !own.equals(regionId))) return List.of();
+            return listAll(own);
+        }
+        // Everybody else sees their own center and nothing else
+        UUID ownCenter = actor.getCenter() != null ? actor.getCenter().getId() : null;
+        if (ownCenter == null) return List.of();
+        Center center;
+        try {
+            center = tenantSecurity.requireCenter(ownCenter);
+        } catch (ResourceNotFoundException e) {
+            return List.of();
+        }
+        if (regionId != null && (center.getRegion() == null || !regionId.equals(center.getRegion().getId()))) {
+            return List.of();
+        }
+        return List.of(toResponse(center));
+    }
+
+    private List<CenterResponse> listAll(UUID regionId) {
         UUID tenantId = TenantContext.get();
         if (tenantId != null) {
             List<Center> centers = (regionId != null)

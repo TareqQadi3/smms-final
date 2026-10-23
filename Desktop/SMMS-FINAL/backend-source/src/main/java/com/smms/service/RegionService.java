@@ -30,7 +30,26 @@ public class RegionService {
     private final AdminScopePolicy policy;
 
     @Transactional(readOnly = true)
-    public List<RegionResponse> listAll() {
+    public List<RegionResponse> listAll(User actor) {
+        if (actor == null || actor.getRole() == UserRole.system_admin) return listAllRegions();
+        // Everybody else sees only the region they belong to (a supervisor's own, or their center's)
+        UUID ownRegion = null;
+        if (actor.getRole() == UserRole.region_supervisor) {
+            ownRegion = actor.getRegion() != null ? actor.getRegion().getId() : null;
+        } else if (actor.getCenter() != null) {
+            try {
+                var center = tenantSecurity.requireCenter(actor.getCenter().getId());
+                ownRegion = center.getRegion() != null ? center.getRegion().getId() : null;
+            } catch (ResourceNotFoundException e) {
+                ownRegion = null;
+            }
+        }
+        if (ownRegion == null) return List.of();
+        final UUID visible = ownRegion;
+        return listAllRegions().stream().filter(r -> visible.equals(r.getId())).toList();
+    }
+
+    private List<RegionResponse> listAllRegions() {
         UUID tenantId = TenantContext.get();
         if (tenantId != null) {
             return regionRepo.findAllByTenantIdAndIsActiveTrueAndDeletedAtIsNull(tenantId)

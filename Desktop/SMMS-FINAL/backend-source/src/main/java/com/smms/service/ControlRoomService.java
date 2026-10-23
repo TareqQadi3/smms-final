@@ -47,6 +47,21 @@ public class ControlRoomService {
         return rooms.stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Rooms of one region, optionally narrowed to one center of it. A center outside the region
+     * simply matches nothing, so a foreign centerId yields an empty list (no existence oracle).
+     */
+    @Transactional(readOnly = true)
+    public List<ControlRoomResponse> listByRegion(UUID regionId, UUID centerId) {
+        UUID tenantId = TenantContext.get();
+        List<ControlRoom> rooms = tenantId != null
+            ? controlRoomRepo.findAllByTenantIdAndCenterRegionIdAndIsActiveTrue(tenantId, regionId)
+            : controlRoomRepo.findAllByCenterRegionIdAndIsActiveTrue(regionId);
+        return rooms.stream()
+            .filter(cr -> centerId == null || (cr.getCenter() != null && centerId.equals(cr.getCenter().getId())))
+            .map(this::toResponse).toList();
+    }
+
     /** Returns only the CRs with the given IDs (user-specific access list). */
     @Transactional(readOnly = true)
     public List<ControlRoomResponse> listByIds(Collection<UUID> ids) {

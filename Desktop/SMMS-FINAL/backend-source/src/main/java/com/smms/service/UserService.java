@@ -33,15 +33,6 @@ import java.util.UUID;
 @Transactional
 public class UserService {
 
-    private static final java.util.Set<UserRole> REGION_ROLES = java.util.Set.of(
-        UserRole.region_supervisor
-    );
-    private static final java.util.Set<UserRole> CENTER_ROLES = java.util.Set.of(
-        UserRole.hospital_supervisor, UserRole.control_room, UserRole.technician,
-        UserRole.maintenance_manager, UserRole.electrical_manager, UserRole.warehouse,
-        UserRole.operating_company_manager, UserRole.resident, UserRole.department
-    );
-
     private final UserRepository userRepo;
     private final UserControlRoomAccessRepository accessRepo;
     private final PasswordEncoder passwordEncoder;
@@ -49,10 +40,16 @@ public class UserService {
     private final PlanEnforcementService planEnforcement;
     private final TenantSecurityService tenantSecurity;
     private final AdminScopePolicy policy;
+    private final UserAccountValidator validator;
 
     public UserResponse create(CreateUserRequest req, User actor) {
         // ── Role hierarchy first: a forbidden role is 403 whatever the ids say ──
         policy.assertCanAssignRole(actor, req.getRole());
+        // ── Same field rules as the bulk import (400) ──
+        final String username = req.getUsername() == null ? null : req.getUsername().trim();
+        validator.require(validator.validateFields(new UserAccountValidator.Fields(
+            username, req.getPassword(), req.getEmail(), req.getPhone(), req.getFullName(),
+            req.getRole(), req.getDepartmentName(), req.getDepartmentEmail())));
         boolean platformRole = req.getRole() == UserRole.system_admin;
         boolean actorIsAdmin = actor == null || actor.getRole() == UserRole.system_admin;
 
@@ -78,7 +75,7 @@ public class UserService {
             // Scoped creators can only create users that live inside their scope
             throw new IllegalArgumentException("Center is required");
         }
-        validateLinks(req.getRole(), center, region);
+        validator.require(validator.validateLinks(req.getRole(), center, region, req.getDepartmentName()));
 
         List<ControlRoom> rooms = new ArrayList<>();
         java.util.Set<UUID> crIds = new LinkedHashSet<>();
@@ -87,7 +84,7 @@ public class UserService {
         for (UUID crId : crIds) {
             ControlRoom cr = tenantSecurity.requireControlRoom(crId);
             policy.assertControlRoomInScope(actor, cr);
-            assertRoomMatchesUserCenter(actor, center, cr);
+            validator.assertGrantAllowed(actor, req.getRole(), center, cr);
             rooms.add(cr);
         }
 
@@ -105,8 +102,8 @@ public class UserService {
         planEnforcement.checkUserLimit(tenantId, 1);
 
         // ── Duplicate checks ───────────────────────────────────
-        if (userRepo.existsByUsernameAndDeletedAtIsNull(req.getUsername())) {
-            throw new IllegalArgumentException("Username already exists: " + req.getUsername());
+        if (userRepo.existsByUsernameAndDeletedAtIsNull(username)) {
+            throw new IllegalArgumentException("Username already exists: " + username);
         }
         if (StringUtils.hasText(req.getEmail())
                 && userRepo.existsByEmailAndDeletedAtIsNull(req.getEmail())) {
@@ -117,10 +114,10 @@ public class UserService {
         // email is unique+NOT NULL in DB; generate placeholder if not provided
         String email = StringUtils.hasText(req.getEmail())
             ? req.getEmail()
-            : req.getUsername() + "@smms.local";
+            : username + "@smms.local";
 
         User user = User.builder()
-            .username(req.getUsername().trim())
+            .username(username)
             .email(email)
             .passwordHash(passwordEncoder.encode(req.getPassword()))
             .fullName(InputSanitizer.clean(req.getFullName(), 200))
@@ -180,8 +177,9 @@ public class UserService {
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             throw new IllegalArgumentException("Current password is incorrect");
         }
-        if (newPassword == null || newPassword.length() < 8) {
-            throw new IllegalArgumentException("New password must be at least 8 characters");
+        if (newPassword == null || newPassword.length() < UserAccountValidator.PASSWORD_MIN
+                || newPassword.length() > UserAccountValidator.PASSWORD_MAX) {
+            throw new IllegalArgumentException("New password must be 8-128 characters");
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepo.save(user);
@@ -192,11 +190,17 @@ public class UserService {
         // Scope (404) and rank (403) of the user being changed
         policy.assertCanManageUser(actor, user);
         assertCanApplyScopeChanges(actor, user, req);
+        validator.require(validator.validateContact(req.getEmail(), req.getPhone(), req.getFullName()));
+        if (StringUtils.hasText(req.getDepartmentEmail())) {
+            validator.require(validator.validateContact(req.getDepartmentEmail(), null, null));
+        }
 
         UserRole finalRole = req.getRole() != null ? req.getRole() : user.getRole();
         Center finalCenter = user.getCenter();
         Region finalRegion = user.getRegion();
         boolean linksChanged = req.getRole() != null && req.getRole() != user.getRole();
+        String finalDepartmentName = StringUtils.hasText(req.getDepartmentName())
+            ? InputSanitizer.clean(req.getDepartmentName(), 200) : user.getDepartmentName();
         if (req.getCenterId() != null) {
             finalCenter = tenantSecurity.requireCenter(req.getCenterId());
             policy.assertCenterInScope(actor, finalCenter);
@@ -209,7 +213,7 @@ public class UserService {
         }
         if (linksChanged) {
             // Re-validate the role/center/region invariants of the resulting state
-            validateLinks(finalRole, finalCenter, finalRegion);
+            validator.require(validator.validateLinks(finalRole, finalCenter, finalRegion, finalDepartmentName));
             if (finalRole == UserRole.system_admin) {
                 user.setTenantId(null); // platform-level account, same invariant as DataInitializer
             } else {
@@ -225,6 +229,11 @@ public class UserService {
         if (req.getFullNameAr()  != null)            user.setFullNameAr(InputSanitizer.clean(req.getFullNameAr(), 200));
         if (StringUtils.hasText(req.getEmail()))     user.setEmail(req.getEmail());
         if (req.getPhone()       != null)            user.setPhone(req.getPhone());
+        if (finalRole == UserRole.department) {
+            user.setDepartmentName(finalDepartmentName);
+            if (StringUtils.hasText(req.getDepartmentEmail())) user.setDepartmentEmail(req.getDepartmentEmail());
+        }
+        revokeGrantsOutsideCenter(user, finalCenter);
         user.setRole(finalRole);
         user.setCenter(finalCenter);
         user.setRegion(finalRegion);
@@ -238,6 +247,7 @@ public class UserService {
      */
     public UserResponse updateMe(UUID id, UpdateUserRequest req) {
         User user = tenantSecurity.requireUser(id);
+        validator.require(validator.validateContact(req.getEmail(), req.getPhone(), req.getFullName()));
         assertEmailAvailable(user, req.getEmail());
         if (StringUtils.hasText(req.getFullName()))  user.setFullName(InputSanitizer.clean(req.getFullName(), 200));
         if (req.getFullNameAr()  != null)            user.setFullNameAr(InputSanitizer.clean(req.getFullNameAr(), 200));
@@ -257,8 +267,9 @@ public class UserService {
     }
 
     public void resetPassword(UUID id, String newPassword) {
-        if (newPassword == null || newPassword.length() < 8) {
-            throw new IllegalArgumentException("Password must be at least 8 characters");
+        if (newPassword == null || newPassword.length() < UserAccountValidator.PASSWORD_MIN
+                || newPassword.length() > UserAccountValidator.PASSWORD_MAX) {
+            throw new IllegalArgumentException("Password must be 8-128 characters");
         }
         User user = tenantSecurity.requireUser(id);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
@@ -276,7 +287,7 @@ public class UserService {
         ControlRoom cr = tenantSecurity.requireControlRoom(controlRoomId);
         policy.assertControlRoomInScope(actor, cr);
         policy.assertSameTenant(user, cr);
-        assertRoomMatchesUserCenter(actor, user.getCenter(), cr);
+        validator.assertGrantAllowed(actor, user.getRole(), user.getCenter(), cr);
         if (accessRepo.existsByUserIdAndControlRoomId(user.getId(), cr.getId())) return;
         accessRepo.save(UserControlRoomAccess.builder().user(user).controlRoom(cr).build());
     }
@@ -310,26 +321,20 @@ public class UserService {
         }
     }
 
-    /** Final state of a user: required links per role, and center inside region when both are set. */
-    private void validateLinks(UserRole role, Center center, Region region) {
-        if (REGION_ROLES.contains(role) && region == null) {
-            throw new IllegalArgumentException("Region is required for role: " + role);
-        }
-        if (CENTER_ROLES.contains(role) && center == null) {
-            throw new IllegalArgumentException("Center is required for role: " + role);
-        }
-        if (center != null && region != null
-                && (center.getRegion() == null || !region.getId().equals(center.getRegion().getId()))) {
-            throw new IllegalArgumentException("Center does not belong to the given region");
-        }
-    }
-
-    /** A non-admin may only grant control rooms of the user's own center (open question Q1). */
-    private void assertRoomMatchesUserCenter(User actor, Center userCenter, ControlRoom cr) {
-        if (actor == null || actor.getRole() == UserRole.system_admin) return;
-        if (userCenter != null && (cr.getCenter() == null
-                || !userCenter.getId().equals(cr.getCenter().getId()))) {
-            throw new AccessDeniedException("Control room belongs to a different center");
+    /**
+     * A user who moves to another center must not keep control rooms of the old one: those grants
+     * would keep exposing the old center's tickets to them.
+     */
+    private void revokeGrantsOutsideCenter(User user, Center newCenter) {
+        UUID oldCenterId = user.getCenter() != null ? user.getCenter().getId() : null;
+        UUID newCenterId = newCenter != null ? newCenter.getId() : null;
+        if (java.util.Objects.equals(oldCenterId, newCenterId)) return;
+        for (UserControlRoomAccess grant : accessRepo.findByUserId(user.getId())) {
+            ControlRoom room = grant.getControlRoom();
+            UUID roomCenter = room != null && room.getCenter() != null ? room.getCenter().getId() : null;
+            if (room != null && !java.util.Objects.equals(roomCenter, newCenterId)) {
+                accessRepo.deleteByUserIdAndControlRoomId(user.getId(), room.getId());
+            }
         }
     }
 

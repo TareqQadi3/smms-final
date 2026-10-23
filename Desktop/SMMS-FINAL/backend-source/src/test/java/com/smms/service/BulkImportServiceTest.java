@@ -57,7 +57,7 @@ class BulkImportServiceTest {
         PasswordEncoder encoder = mock(PasswordEncoder.class);
         when(encoder.encode(anyString())).thenReturn("HASH");
         service = new BulkImportService(userRepo, centerRepo, encoder,
-            new AdminScopePolicy(mock(TenantRepository.class)), plan);
+            new AdminScopePolicy(mock(TenantRepository.class)), plan, new UserAccountValidator());
         centerA = center(region(tA), tA);
         centerB = center(region(tB), tB);
         when(centerRepo.findByTenantIdAndCodeIgnoreCaseAndDeletedAtIsNull(tA, "CA")).thenReturn(Optional.of(centerA));

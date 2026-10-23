@@ -17,6 +17,9 @@ public interface ControlRoomRepository extends JpaRepository<ControlRoom, UUID> 
     List<ControlRoom> findAllByIsActiveTrue();
     List<ControlRoom> findAllByTenantIdAndIsActiveTrue(UUID tenantId);
     List<ControlRoom> findAllByTenantIdAndCenterIdAndIsActiveTrue(UUID tenantId, UUID centerId);
+    /** Rooms of every center of one region (region_supervisor listing). */
+    List<ControlRoom> findAllByTenantIdAndCenterRegionIdAndIsActiveTrue(UUID tenantId, UUID regionId);
+    List<ControlRoom> findAllByCenterRegionIdAndIsActiveTrue(UUID regionId);
     Optional<ControlRoom> findByCenterIdAndType(UUID centerId, ControlRoomType type);
     List<ControlRoom> findAllByIdInAndIsActiveTrue(Collection<UUID> ids);
 }

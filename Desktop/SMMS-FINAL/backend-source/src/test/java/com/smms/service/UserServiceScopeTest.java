@@ -49,7 +49,8 @@ class UserServiceScopeTest {
         planEnforcement = mock(PlanEnforcementService.class);
         tenantRepo = mock(TenantRepository.class);
         service = new UserService(userRepo, accessRepo, mock(PasswordEncoder.class),
-            mock(UserMapper.class), planEnforcement, tenantSecurity, new AdminScopePolicy(tenantRepo));
+            mock(UserMapper.class), planEnforcement, tenantSecurity, new AdminScopePolicy(tenantRepo),
+            new UserAccountValidator());
         when(userRepo.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
     }
 

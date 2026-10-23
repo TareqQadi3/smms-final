@@ -16,4 +16,7 @@ public class UpdateUserRequest {
     private UserRole role;
     private UUID centerId;
     private UUID regionId;
+    /** Needed when the role becomes department and the account has no department name yet. */
+    @Size(max = 200) private String departmentName;
+    @Email @Size(max = 255) private String departmentEmail;
 }

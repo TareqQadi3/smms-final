@@ -21,7 +21,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.*;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -33,6 +32,7 @@ public class BulkImportService {
     private final PasswordEncoder passwordEncoder;
     private final AdminScopePolicy policy;
     private final PlanEnforcementService planEnforcement;
+    private final UserAccountValidator validator;
 
     // ── Templates ─────────────────────────────────────────────
 
@@ -75,8 +75,6 @@ public class BulkImportService {
     // ── Import ────────────────────────────────────────────────
 
     private static final String XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    private static final Pattern USERNAME = Pattern.compile("^[a-zA-Z0-9._@-]+$");
-    private static final Pattern EMAIL = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final int MAX_REPORTED_ERRORS = 100;
     private static final int MAX_ERROR_LENGTH = 200;
 
@@ -105,7 +103,7 @@ public class BulkImportService {
             .complexName(blankToNull(InputSanitizer.clean(c[6], 200)))
             .buildingNumber(blankToNull(InputSanitizer.clean(c[7], 50)))
             .unitNumber(blankToNull(InputSanitizer.clean(c[8], 50)))
-            .build(), 4, 5, "username, password, fullName are required", 2);
+            .build(), 4, 5, 2);
     }
 
     /** Imports department accounts; same all-or-nothing semantics as {@link #importResidents}. */
@@ -119,7 +117,7 @@ public class BulkImportService {
             .departmentSupervisor(blankToNull(InputSanitizer.clean(c[3], 200)))
             .departmentEmail(blankToNull(c[4]))
             .extensionNumber(blankToNull(InputSanitizer.clean(c[5], 20)))
-            .build(), 6, 7, "username, password, departmentName are required", 2);
+            .build(), 6, 7, 2);
     }
 
     private interface Mapper { User map(String[] cells, Center center); }
@@ -129,11 +127,10 @@ public class BulkImportService {
      * @param centerCol      column of the center code
      * @param emailCol       column of the account email (a placeholder is used when empty)
      * @param phoneCol       column of the phone number
-     * @param requiredMsg    message for missing required cells (columns 0, 1 and nameCol)
      * @param nameCol        column of the required display name
      */
     private ImportResult importUsers(MultipartFile file, User actor, UserRole role, int columns, int centerCol,
-                                     Mapper mapper, int emailCol, int phoneCol, String requiredMsg,
+                                     Mapper mapper, int emailCol, int phoneCol,
                                      int nameCol) throws Exception {
         validateFile(file);
         // Role rule first, once for the whole file (403)
@@ -155,36 +152,21 @@ public class BulkImportService {
             int before = errors.size();
             String where = "Row " + row.number() + ": ";
 
-            if (!StringUtils.hasText(c[0]) || !StringUtils.hasText(c[1]) || !StringUtils.hasText(c[nameCol])) {
-                errors.add(where + requiredMsg);
-            }
+            // Same field rules as UserService.create, shared through UserAccountValidator
+            boolean isDepartment = role == UserRole.department;
+            Set<String> rowErrors = new LinkedHashSet<>(validator.validateFields(new UserAccountValidator.Fields(
+                c[0], c[1], c[emailCol], c[phoneCol], c[nameCol], role,
+                isDepartment ? c[2] : null, isDepartment ? c[4] : null)));
             String username = c[0];
-            if (StringUtils.hasText(username)) {
-                if (username.length() < 3 || username.length() > 100 || !USERNAME.matcher(username).matches()) {
-                    errors.add(where + "username must be 3-100 characters: letters, digits, dots, hyphens, underscores or @");
-                } else if (!usernames.add(username)) {
-                    errors.add(where + "username '" + username + "' appears more than once in the file");
+            if (StringUtils.hasText(username) && validator.validateUsername(username).isEmpty()) {
+                if (!usernames.add(username)) {
+                    rowErrors.add("username '" + username + "' appears more than once in the file");
                 } else if (userRepo.existsByUsernameAndDeletedAtIsNull(username)) {
-                    errors.add(where + "username '" + username + "' already exists");
+                    rowErrors.add("username '" + username + "' already exists");
                 }
             }
-            if (StringUtils.hasText(c[1]) && (c[1].length() < 8 || c[1].length() > 128)) {
-                errors.add(where + "password must be 8-128 characters");
-            }
             String email = c[emailCol];
-            if (StringUtils.hasText(email) && (email.length() > 255 || !EMAIL.matcher(email).matches())) {
-                errors.add(where + "email is not a valid address");
-            }
-            if (role == UserRole.department && StringUtils.hasText(c[4])
-                    && (c[4].length() > 255 || !EMAIL.matcher(c[4]).matches())) {
-                errors.add(where + "departmentEmail is not a valid address");
-            }
-            if (StringUtils.hasText(c[phoneCol]) && c[phoneCol].length() > 20) {
-                errors.add(where + "phone must be at most 20 characters");
-            }
-            if (StringUtils.hasText(c[nameCol]) && c[nameCol].length() > 200) {
-                errors.add(where + "name must be at most 200 characters");
-            }
+            rowErrors.forEach(e -> errors.add(where + e));
 
             Center center = null;
             if (!StringUtils.hasText(c[centerCol])) {
@@ -198,6 +180,11 @@ public class BulkImportService {
                     errors.add(where + "center has no tenant assigned");
                     center = null;
                 }
+            }
+
+            if (center != null) {
+                validator.validateLinks(role, center, null, isDepartment ? c[2] : null)
+                    .stream().filter(e -> !errors.contains(where + e)).forEach(e -> errors.add(where + e));
             }
 
             String resolvedEmail = null;

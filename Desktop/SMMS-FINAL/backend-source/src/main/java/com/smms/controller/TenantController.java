@@ -36,8 +36,15 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/platform/tenants")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('system_admin')")
+@PreAuthorize(TenantController.PLATFORM_ADMIN_ONLY)
 public class TenantController {
+
+    /**
+     * A tenant-bound system_admin (tenant in the token) manages their own tenant only; these endpoints
+     * act across all tenants, so the platform administrator (no tenant context) is the only caller.
+     */
+    public static final String PLATFORM_ADMIN_ONLY =
+        "hasRole('system_admin') and T(com.smms.util.TenantContext).isPlatformAdmin()";
 
     private static final Map<String, String> SORT_FIELDS = Map.of("createdAt", "createdAt", "name", "name");
 

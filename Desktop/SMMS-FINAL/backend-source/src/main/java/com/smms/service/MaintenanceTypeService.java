@@ -40,9 +40,12 @@ public class MaintenanceTypeService {
     /** ISSUE 3 FIX: filter maintenance types by the control room's type + tenant. */
     @Transactional(readOnly = true)
     public List<MaintenanceTypeResponse> listByControlRoom(UUID controlRoomId) {
-        ControlRoom cr = controlRoomRepo.findById(controlRoomId)
-            .orElseThrow(() -> new ResourceNotFoundException("ControlRoom not found"));
         UUID tenantId = TenantContext.get();
+        // Another tenant's room is "not found", the same as a missing id
+        ControlRoom cr = (tenantId != null
+            ? controlRoomRepo.findByIdAndTenantIdAndDeletedAtIsNull(controlRoomId, tenantId)
+            : controlRoomRepo.findById(controlRoomId).filter(c -> c.getDeletedAt() == null))
+            .orElseThrow(() -> new ResourceNotFoundException("ControlRoom not found"));
         if (tenantId != null)
             return repo.findAllByTenantIdAndControlRoomTypeAndIsActiveTrueOrderByNameAsc(tenantId, cr.getType())
                 .stream().map(this::toResponse).toList();
@@ -74,8 +77,7 @@ public class MaintenanceTypeService {
     }
 
     public MaintenanceTypeResponse update(UUID id, CreateMaintenanceTypeRequest req) {
-        MaintenanceType mt = repo.findById(id)
-            .orElseThrow(() -> new ResourceNotFoundException("MaintenanceType not found"));
+        MaintenanceType mt = require(id);
         if (StringUtils.hasText(req.getName()))   mt.setName(req.getName());
         if (StringUtils.hasText(req.getNameAr())) mt.setNameAr(req.getNameAr());
         if (req.getControlRoomType() != null)     mt.setControlRoomType(req.getControlRoomType());
@@ -83,10 +85,20 @@ public class MaintenanceTypeService {
     }
 
     public void delete(UUID id) {
-        MaintenanceType mt = repo.findById(id)
-            .orElseThrow(() -> new ResourceNotFoundException("MaintenanceType not found"));
+        MaintenanceType mt = require(id);
         mt.setActive(false);   // soft-delete
         repo.save(mt);
+    }
+
+    /**
+     * Tenant-scoped lookup: a tenant administrator only reaches their own tenant's types (404
+     * otherwise, also for legacy rows without a tenant). The platform administrator (no tenant in
+     * the context) deliberately reaches any type.
+     */
+    private MaintenanceType require(UUID id) {
+        UUID tenantId = TenantContext.get();
+        return (tenantId != null ? repo.findByIdAndTenantId(id, tenantId) : repo.findById(id))
+            .orElseThrow(() -> new ResourceNotFoundException("MaintenanceType not found"));
     }
 
     // ── Helper ────────────────────────────────────────────────
