@@ -14,6 +14,10 @@
 | V6 | indexes, FKs, safe CHECKs; NOT NULL only when 0 NULL rows and 0 tenant-less work orders, otherwise deferred with a warning |
 | V7 | default tenant (only if absent) and tenant for the three fixed `init.sql` seed ids, only where NULL |
 | V8 | unique index on `lower(username)`; skipped with a warning if duplicates exist |
+| V9 | re-derive tenant_id for NULL rows from verified parents (after V7), re-apply guarded V6 constraints; no default tenant |
+| V10 | read-only diagnostic views and `diag_tenant_summary()` (wrong-tenant detection, never auto-fix) |
+| V11 | `auth_sessions` (refresh rotation, reuse detection, logout revocation) |
+| V12 | upload idempotency table and attachment columns |
 
 Ambiguous rows are never defaulted: they stay NULL and are reported (migration NOTICEs and `TenantIntegrityReporter` at startup). An admin fixes tenant-less users via `GET /api/admin/tenantless-users` and `POST /api/admin/users/{id}/tenant`. Follow-up F-A1: fix tenant-less work orders and their children manually, then re-run V6's guarded statements (idempotent) to apply the deferred NOT NULL/CHECK.
 

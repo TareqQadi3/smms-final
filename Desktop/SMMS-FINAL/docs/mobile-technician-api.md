@@ -71,3 +71,12 @@ Source: code at branch claude/security-phase-3. Not implemented as an app; see r
 | Refresh rotation / revocation | decide in M4 (needed if mobile ships) |
 | Notes endpoint, delta sync, per-id read, push | LATER |
 ## Acceptance probes per endpoint (for M4): login/refresh 200/401/429; list scope (technician sees only own); transition table above incl. 422 repeat; lock 409; upload 201/400/404 + history row; list attachments; WS open >5 s + frame on assign + no frame to other technician + none after rollback; history order.
+
+
+## Addendum (security phase 4, now implemented in the backend)
+- **Refresh:** every `POST /auth/refresh` returns a NEW refresh token and kills the old one. Reusing an old one revokes the whole session (no grace window), so the client must serialize (single-flight) refresh calls and persist the new token before using it. `POST /auth/logout` always returns 204 and revokes the session.
+- **Errors:** missing/invalid/expired/revoked/deactivated token = 401 (never 403).
+- **WebSocket:** `POST /api/ws/ticket` (Bearer) returns a single-use 30 s ticket; open `/ws/notifications` with sub-protocols `['smms.v1', 'smms.ticket.<ticket>']`. Nothing in the URL.
+- **Photo upload retries:** send an `Idempotency-Key` header (UUID, one per logical upload). A replay returns 200 with `Idempotent-Replayed: true`; the same key with different content is 422; a malformed key is 400. Files must match their extension by magic bytes (max 10 files).
+- **Download:** attachment download endpoint with the same visibility rules as the work order (out of scope = 404).
+- **Login/refresh body** includes `passwordChangeRequired`.

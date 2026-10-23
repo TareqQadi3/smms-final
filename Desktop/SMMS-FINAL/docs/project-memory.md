@@ -123,3 +123,8 @@ Hard tasks: plan with Opus 5.5 only, execute with Sonnet 5.5 only, verify the mo
 - Done on branch: Flyway + V3-V8, tenant_id on child tables, safe startup, tenant assignment endpoint, secret removal + prod guard, user-admin authz parity, assign-400 fix, return-for-info, escalation notifications, duplicate warning. Details: work-log Entry 9, security/migrations-and-secrets.md.
 - Still open: department link (users.department_id), wrong-tenant row detection, attachment download endpoint, refresh-token rotation/logout revocation, WebSocket browser auth, default admin password, further CHECKs, inventory/purchasing (roadmap.md), technician mobile app (mobile-technician-api.md).
 - Deploying to the Codespace needs the owner's approval and a DB backup first; setup.sh will replace the leaked JWT secret and force re-login.
+
+## Security phase 4 status (branch claude/security-phase-4, 2026-10-24)
+- Done on branch: Flyway V1-V12, tenant diagnostics (read-only), session store with refresh rotation/logout revocation, WebSocket tickets, attachment download, upload idempotency, 401 entry point, default-admin protection, TypeScript errors fixed, frontend CI. Evidence: work-log Entry 10.
+- Still open: department link (design only), wrong-tenant row correction (manual, owner decision), V1 `sysadmin` default password, one-replica limit for WS tickets, nginx query-string logging, action SHA pinning, inventory/purchasing, technician mobile app.
+- Deploy only via security/deployment-runbook.md; the Codespace has never been touched by Claude.

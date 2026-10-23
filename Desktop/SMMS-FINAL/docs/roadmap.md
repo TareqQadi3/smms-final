@@ -7,13 +7,11 @@ Acceptance criteria:
 1. Branch `claude/security-phase-3` reviewed and merged into the integration branch by the owner; deployed to the Codespace only after a database backup and explicit approval.
 2. `setup.sh` run on the Codespace replaces the leaked JWT secret; all users re-login; admin lists tenant-less users (`GET /api/admin/tenantless-users`) and assigns tenants or confirms none.
 3. Flyway reports V1..V8 applied on the Codespace DB; any V6 deferred NOT NULL/CHECK follow-up (F-A1) cleared after the tenant-less work orders are fixed.
-4. Attachment download endpoint (authorised, streamed) and idempotency key for uploads.
-5. Refresh-token rotation and server-side logout/revocation.
-6. WebSocket: browser-compatible auth (not header-only) and push after commit.
+4. DONE on `claude/security-phase-4`: attachment download, upload Idempotency-Key, refresh rotation + logout revocation, browser WebSocket tickets. Remaining: push after DB commit, Redis-backed ticket store for multiple replicas.
 7. Seed the 15 test accounts only with explicit authorization; start the QA campaign (`qa/test-plan.md`).
 
 ## Planned: Technician mobile app (separate milestone, not started)
-Dedicated app for field technicians on the existing backend (no second backend). Contract: `mobile-technician-api.md`. Depends on M4 items 4-6.
+Dedicated app for field technicians on the existing backend (no second backend). Contract: `mobile-technician-api.md`. Backend prerequisites (download, idempotency, rotation, WS tickets) exist on `claude/security-phase-4`; the client must single-flight refresh.
 
 ## Planned: Inventory deduction and purchasing (M5, not started)
 **Foundation present:**
