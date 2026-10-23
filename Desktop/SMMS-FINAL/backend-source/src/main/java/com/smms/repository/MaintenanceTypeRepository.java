@@ -14,5 +14,6 @@ public interface MaintenanceTypeRepository extends JpaRepository<MaintenanceType
     List<MaintenanceType> findAllByTenantIdAndIsActiveTrueOrderByNameAsc(UUID tenantId);
     List<MaintenanceType> findAllByControlRoomTypeAndIsActiveTrueOrderByNameAsc(ControlRoomType type);
     List<MaintenanceType> findAllByTenantIdAndControlRoomTypeAndIsActiveTrueOrderByNameAsc(UUID tenantId, ControlRoomType type);
+    java.util.Optional<MaintenanceType> findByIdAndTenantId(UUID id, UUID tenantId);
     boolean existsByNameAndControlRoomType(String name, ControlRoomType type);
 }
