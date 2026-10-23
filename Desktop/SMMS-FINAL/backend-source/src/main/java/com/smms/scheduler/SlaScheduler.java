@@ -1,6 +1,8 @@
 package com.smms.scheduler;
 
+import com.smms.enums.TicketPriority;
 import com.smms.enums.TicketStatus;
+import com.smms.service.NotificationService;
 import com.smms.entity.WorkOrder;
 import com.smms.repository.WorkOrderRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +20,7 @@ import java.util.List;
 public class SlaScheduler {
 
     private final WorkOrderRepository workOrderRepo;
+    private final NotificationService notificationService;
 
     private static final List<String> TERMINAL = List.of(
         TicketStatus.COMPLETED.getDbValue(),
@@ -34,5 +37,10 @@ public class SlaScheduler {
         List<java.util.UUID> ids = breached.stream().map(WorkOrder::getId).toList();
         workOrderRepo.markSlaBreached(ids);
         log.info("SLA breached for {} tickets", ids.size());
+        // Rows flip false to true exactly once (findSlaBreached filters sla_breached = false), so each
+        // ticket escalates at most once. Notification-only; see NotificationService.notifyEscalation.
+        breached.stream()
+            .filter(w -> w.getPriority() == TicketPriority.critical || w.getPriority() == TicketPriority.high)
+            .forEach(notificationService::notifyEscalation);
     }
 }

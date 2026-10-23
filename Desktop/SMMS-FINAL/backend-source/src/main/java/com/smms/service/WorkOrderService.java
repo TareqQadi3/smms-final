@@ -4,6 +4,7 @@ import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.util.InputSanitizer;
 import com.smms.dto.request.TransitionRequest;
 import com.smms.dto.response.AssignableTechnicianResponse;
+import com.smms.dto.response.DuplicateCandidateResponse;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.*;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -79,7 +81,10 @@ public class WorkOrderService {
         entityManager.refresh(saved);
         recordHistory(saved, null, TicketStatus.NEW, actor, "Ticket created");
         notificationService.notifyControlRoom(saved);
-        return mapper.toResponse(saved);
+        WorkOrderResponse response = mapper.toResponse(saved);
+        // Non-blocking hint; filtered by the creator's own visibility so it can never leak other tickets
+        response.setPossibleDuplicates(findDuplicates(saved, actor));
+        return response;
     }
 
     // ── Transition ────────────────────────────────────────
@@ -122,17 +127,125 @@ public class WorkOrderService {
      */
     static void rejectDedicatedEndpointTransition(TicketStatus from, TicketStatus to, UserRole role) {
         if (to == TicketStatus.ASSIGNED) {
-            throw new IllegalArgumentException(
+            throw new WorkflowException(
                 "Use POST /api/work-orders/{id}/assign to assign a technician; generic transition to assigned is not allowed");
         }
         if (from == TicketStatus.WAITING_APPROVAL && role != UserRole.system_admin) {
-            throw new IllegalArgumentException(
+            throw new WorkflowException(
                 "Use POST /api/work-orders/{id}/approval to decide on approval requests");
         }
         if (from == TicketStatus.COMPLETED && to == TicketStatus.IN_PROGRESS) {
-            throw new IllegalArgumentException(
+            throw new WorkflowException(
                 "Use POST /api/work-orders/{id}/reopen to reopen a completed ticket");
         }
+    }
+
+    // ── Return for information ────────────────────────────
+
+    /** Stage label (not a status: no PG enum change) marking an under_review ticket as returned to the requester. */
+    static final String STAGE_INFO_REQUESTED = "info_requested";
+
+    private static final int DUPLICATE_MAX = 5;
+    private static final int DUPLICATE_SCAN = 200;
+    private static final long DUPLICATE_WINDOW_DAYS = 7;
+
+    /**
+     * control_room / maintenance_manager ask the requester for more detail. Allowed only while the
+     * ticket is under_review and not already waiting; status stays under_review, stage becomes
+     * info_requested. One history row (under_review to under_review) and one notification to the requester.
+     * SLA is not paused (documented gap).
+     */
+    public WorkOrderResponse requestInfo(UUID id, String note, User actor) {
+        WorkOrder wo = getActiveWorkOrder(id, actor);
+        assertNotLockedByOther(wo, actor);
+        if (wo.getStatus() != TicketStatus.UNDER_REVIEW) {
+            throw new WorkflowException("Information can only be requested while the ticket is under_review");
+        }
+        if (STAGE_INFO_REQUESTED.equals(wo.getCurrentStage())) {
+            throw new WorkflowException("Information has already been requested for this ticket");
+        }
+        wo.setCurrentStage(STAGE_INFO_REQUESTED);
+        workOrderRepo.save(wo);
+        recordHistory(wo, TicketStatus.UNDER_REVIEW, TicketStatus.UNDER_REVIEW, actor,
+            "Information requested: " + note);
+        if (wo.getRequestedBy() != null && !wo.getRequestedBy().getId().equals(actor.getId())) {
+            notificationService.notifyUser(wo.getRequestedBy(), wo, "INFO_REQUESTED",
+                "Information requested: " + wo.getTicketNumber());
+        }
+        return mapper.toResponse(wo);
+    }
+
+    /**
+     * Only the original requester may answer, and only while the stage is info_requested. The stage
+     * returns to under_review, one history row is written and the ticket's control-room operators
+     * are notified.
+     */
+    public WorkOrderResponse provideInfo(UUID id, String note, User actor) {
+        WorkOrder wo = getActiveWorkOrder(id, actor);
+        if (wo.getRequestedBy() == null || !wo.getRequestedBy().getId().equals(actor.getId())) {
+            throw new AccessDeniedException("Only the requester can provide the requested information");
+        }
+        assertNotLockedByOther(wo, actor);
+        if (wo.getStatus() != TicketStatus.UNDER_REVIEW
+                || !STAGE_INFO_REQUESTED.equals(wo.getCurrentStage())) {
+            throw new WorkflowException("No information request is pending for this ticket");
+        }
+        wo.setCurrentStage(workflowEngine.resolveStage(TicketStatus.UNDER_REVIEW));
+        workOrderRepo.save(wo);
+        recordHistory(wo, TicketStatus.UNDER_REVIEW, TicketStatus.UNDER_REVIEW, actor,
+            "Information provided: " + note);
+        notificationService.notifyInfoProvided(wo);
+        return mapper.toResponse(wo);
+    }
+
+    private void assertNotLockedByOther(WorkOrder wo, User actor) {
+        if (wo.isLocked() && !wo.getLockedBy().getId().equals(actor.getId())) {
+            throw new TicketLockedException("Ticket is locked by another user");
+        }
+    }
+
+    // ── Duplicate candidates (read-only, non-blocking) ────
+
+    @Transactional(readOnly = true)
+    public List<DuplicateCandidateResponse> possibleDuplicates(UUID id, User actor) {
+        return findDuplicates(getActiveWorkOrder(id, actor), actor);
+    }
+
+    /**
+     * Candidates share control room and sub type with the base ticket, are still open (not closed or
+     * cancelled), were created in the last 7 days, and have either the same requester or an equal
+     * normalized location (lowercase, trimmed, collapsed whitespace; blank never matches).
+     * Visibility comes from WorkOrderAccessPolicy for the CALLER, so an invisible ticket is never
+     * returned and never counted. At most 5 are returned, newest first.
+     */
+    private List<DuplicateCandidateResponse> findDuplicates(WorkOrder base, User actor) {
+        if (base.getControlRoom() == null) return List.of();
+        Instant cutoff = Instant.now().minus(DUPLICATE_WINDOW_DAYS, ChronoUnit.DAYS);
+        Specification<WorkOrder> spec = Specification.where(accessPolicy.readableBy(actor))
+            .and((root, q, cb) -> cb.and(
+                cb.equal(root.get("controlRoom").get("id"), base.getControlRoom().getId()),
+                cb.equal(root.get("subType"), base.getSubType()),
+                cb.notEqual(root.get("status"), TicketStatus.CLOSED),
+                cb.notEqual(root.get("status"), TicketStatus.CANCELLED),
+                cb.greaterThanOrEqualTo(root.get("createdAt"), cutoff),
+                cb.notEqual(root.get("id"), base.getId())));
+        String baseLocation = normalizeLocation(base.getLocationDetail());
+        UUID baseRequester = base.getRequestedBy() != null ? base.getRequestedBy().getId() : null;
+        return workOrderRepo.findAll(spec,
+                PageRequest.of(0, DUPLICATE_SCAN, Sort.by(Sort.Direction.DESC, "createdAt")))
+            .stream()
+            .filter(c -> (baseRequester != null && c.getRequestedBy() != null
+                    && baseRequester.equals(c.getRequestedBy().getId()))
+                || (!baseLocation.isEmpty() && baseLocation.equals(normalizeLocation(c.getLocationDetail()))))
+            .limit(DUPLICATE_MAX)
+            .map(c -> DuplicateCandidateResponse.builder()
+                .id(c.getId()).ticketNumber(c.getTicketNumber())
+                .status(c.getStatus()).createdAt(c.getCreatedAt()).build())
+            .toList();
+    }
+
+    static String normalizeLocation(String s) {
+        return s == null ? "" : s.trim().toLowerCase().replaceAll("\\s+", " ");
     }
 
     // ── Assign technician ─────────────────────────────────
@@ -141,6 +254,9 @@ public class WorkOrderService {
         WorkOrder wo = getActiveWorkOrder(id, actor);
         if (wo.getStatus() != TicketStatus.UNDER_REVIEW) {
             throw new WorkflowException("Can only assign from under_review status");
+        }
+        if (STAGE_INFO_REQUESTED.equals(wo.getCurrentStage())) {
+            throw new WorkflowException("Ticket is waiting for information from the requester; it cannot be assigned yet");
         }
         User tech = tenantSecurity.requireUser(technicianId, UserRole.technician);
         // A technician can only be assigned inside the ticket's own center; otherwise behave as unknown

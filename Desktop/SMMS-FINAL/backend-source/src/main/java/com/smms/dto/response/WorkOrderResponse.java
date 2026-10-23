@@ -4,10 +4,12 @@ import com.smms.enums.ApprovalDecision;
 import com.smms.enums.SubType;
 import com.smms.enums.TicketPriority;
 import com.smms.enums.TicketStatus;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Builder;
 import lombok.Data;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Data @Builder
@@ -37,4 +39,7 @@ public class WorkOrderResponse {
     String techReport;
     String warehouseNotes;
     String rejectionReason;
+    /** Only set on the create response: visible tickets that look like duplicates (non-blocking warning). */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    List<DuplicateCandidateResponse> possibleDuplicates;
 }
