@@ -14,6 +14,10 @@ public interface CenterRepository extends JpaRepository<Center, UUID> {
     List<Center> findAllByRegionIdAndDeletedAtIsNull(UUID regionId);
     List<Center> findAllByDeletedAtIsNull();
     Optional<Center> findByCodeAndDeletedAtIsNull(String code);
+    /** Bulk import lookup for tenant admins: another tenant's center is invisible. */
+    Optional<Center> findByTenantIdAndCodeIgnoreCaseAndDeletedAtIsNull(UUID tenantId, String code);
+    /** Bulk import lookup for the platform admin (tenant is then taken from the center). */
+    Optional<Center> findByCodeIgnoreCaseAndDeletedAtIsNull(String code);
     List<Center> findAllByTenantIdAndDeletedAtIsNull(UUID tenantId);
     List<Center> findAllByTenantIdAndRegionIdAndDeletedAtIsNull(UUID tenantId, UUID regionId);
     long countByTenantIdAndDeletedAtIsNull(UUID tenantId);

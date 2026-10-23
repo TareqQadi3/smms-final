@@ -1,6 +1,8 @@
 package com.smms.controller;
 
+import com.smms.entity.User;
 import com.smms.service.BulkImportService;
+import com.smms.util.CurrentUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -45,11 +47,11 @@ public class BulkImportController {
     @PostMapping("/residents")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor','hospital_supervisor')")
     public ResponseEntity<Map<String, Object>> importResidents(
-            @RequestParam("file") MultipartFile file) throws Exception {
-        BulkImportService.ImportResult result = importService.importResidents(file);
+            @RequestParam("file") MultipartFile file, @CurrentUser User actor) throws Exception {
+        BulkImportService.ImportResult result = importService.importResidents(file, actor);
         return ResponseEntity.ok(Map.of(
             "success", result.success(),
-            "failed",  result.errors().size(),
+            "failed",  result.failed(),
             "errors",  result.errors()
         ));
     }
@@ -57,11 +59,11 @@ public class BulkImportController {
     @PostMapping("/departments")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor','hospital_supervisor')")
     public ResponseEntity<Map<String, Object>> importDepartments(
-            @RequestParam("file") MultipartFile file) throws Exception {
-        BulkImportService.ImportResult result = importService.importDepartments(file);
+            @RequestParam("file") MultipartFile file, @CurrentUser User actor) throws Exception {
+        BulkImportService.ImportResult result = importService.importDepartments(file, actor);
         return ResponseEntity.ok(Map.of(
             "success", result.success(),
-            "failed",  result.errors().size(),
+            "failed",  result.failed(),
             "errors",  result.errors()
         ));
     }
