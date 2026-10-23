@@ -3,6 +3,8 @@ package com.smms.entity;
 import com.smms.enums.AssetStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "assets",
@@ -31,7 +33,8 @@ public class Asset extends BaseEntity {
     private String location;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 40)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "asset_status")
     @Builder.Default
     private AssetStatus status = AssetStatus.active;
 }
