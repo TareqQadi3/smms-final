@@ -134,7 +134,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         {/* Logo */}
         <div className="flex items-center justify-between px-4 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-blue-500 rounded-lg flex items-center justify-center font-bold text-lg">
+            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-lg">
               S
             </div>
             <div>
@@ -144,8 +144,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="lg:hidden text-white/60 hover:text-white">
-            <X size={18} />
+          <button type="button" onClick={onClose} aria-label={lang === 'ar' ? 'إغلاق القائمة' : 'Close menu'} className="lg:hidden inline-flex size-10 -m-2 items-center justify-center rounded-md text-white/70 hover:text-white outline-none focus-visible:ring-2 focus-visible:ring-white/80">
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 

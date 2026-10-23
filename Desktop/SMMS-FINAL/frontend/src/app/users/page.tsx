@@ -398,12 +398,12 @@ export default function UsersPage() {
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
             <div className="relative max-w-sm">
-              <Search size={15} className={`absolute top-1/2 -translate-y-1/2 text-muted-foreground ${isAr ? 'right-3' : 'left-3'}`}/>
+              <Search size={15} className={`absolute top-1/2 -translate-y-1/2 text-muted-foreground start-3`}/>
               <Input
                 placeholder={tr.search}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                className={`${isAr ? 'pr-9' : 'pl-9'} h-9`}
+                className={`ps-9 h-9`}
               />
             </div>
           </CardContent>
@@ -417,7 +417,7 @@ export default function UsersPage() {
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"/>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 border-b">
                     <tr>
@@ -442,7 +442,7 @@ export default function UsersPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{u.username}</td>
+                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs whitespace-nowrap" dir="ltr">{u.username}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs max-w-[140px] truncate">{u.email || '—'}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs">{(u as User & {phone?:string}).phone || '—'}</td>
                         <td className="px-4 py-3">
@@ -455,25 +455,26 @@ export default function UsersPage() {
                         </td>
                         <td className="px-4 py-3">
                           {u.active
-                            ? <span className="flex items-center gap-1 text-green-600 text-xs font-medium"><UserCheck size={13}/>{tr.active}</span>
+                            ? <span className="flex items-center gap-1 text-green-700 dark:text-green-400 text-xs font-medium"><UserCheck size={13}/>{tr.active}</span>
                             : <span className="flex items-center gap-1 text-destructive text-xs font-medium"><UserX size={13}/>{tr.inactive}</span>}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
-                            <button onClick={() => openEdit(u)} title={isAr?'تعديل':'Edit'}
-                              className="p-1.5 rounded hover:bg-blue-50 hover:text-blue-600 text-muted-foreground transition-colors">
+                            <button onClick={() => openEdit(u)} title={isAr?'تعديل':'Edit'} aria-label={isAr?'تعديل':'Edit'}
+                              className="inline-flex size-10 md:size-8 items-center justify-center rounded hover:bg-blue-50 hover:text-blue-600 text-muted-foreground transition-colors">
                               <Pencil size={14}/>
                             </button>
                             {isAdmin && String(me?.id) !== String(u.id) && (
-                              <button onClick={() => openReset(u)} title={isAr?'إعادة تعيين كلمة المرور':'Reset Password'}
-                                className="p-1.5 rounded hover:bg-yellow-50 hover:text-yellow-600 text-muted-foreground transition-colors">
+                              <button onClick={() => openReset(u)} title={isAr?'إعادة تعيين كلمة المرور':'Reset Password'} aria-label={isAr?'إعادة تعيين كلمة المرور':'Reset Password'}
+                                className="inline-flex size-10 md:size-8 items-center justify-center rounded hover:bg-yellow-50 hover:text-yellow-600 text-muted-foreground transition-colors">
                                 <KeyRound size={14}/>
                               </button>
                             )}
                             {String(me?.id) !== String(u.id) && (
                               <button onClick={() => openConfirm(u)}
                                 title={u.active?(isAr?'تعطيل':'Deactivate'):(isAr?'تفعيل':'Activate')}
-                                className={`p-1.5 rounded transition-colors ${u.active?'hover:bg-red-50 hover:text-red-600':'hover:bg-green-50 hover:text-green-600'} text-muted-foreground`}>
+                                aria-label={u.active?(isAr?'تعطيل':'Deactivate'):(isAr?'تفعيل':'Activate')}
+                                className={`inline-flex size-10 md:size-8 items-center justify-center rounded transition-colors ${u.active?'hover:bg-red-50 hover:text-red-600':'hover:bg-green-50 hover:text-green-600'} text-muted-foreground`}>
                                 {u.active ? <PowerOff size={14}/> : <Power size={14}/>}
                               </button>
                             )}

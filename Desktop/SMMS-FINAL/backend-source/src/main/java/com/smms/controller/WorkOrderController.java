@@ -2,6 +2,7 @@ package com.smms.controller;
 
 import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.dto.request.TransitionRequest;
+import com.smms.dto.response.AttachmentResponse;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.User;
@@ -113,12 +114,14 @@ public class WorkOrderController {
     }
 
     @PostMapping("/{id}/lock")
+    @PreAuthorize("hasAnyRole('control_room','technician','hospital_supervisor','region_supervisor','system_admin','maintenance_manager')")
     public ResponseEntity<Void> lock(@PathVariable UUID id, @CurrentUser User actor) {
         workOrderService.lock(id, actor);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/unlock")
+    @PreAuthorize("hasAnyRole('control_room','technician','hospital_supervisor','region_supervisor','system_admin','maintenance_manager')")
     public ResponseEntity<Void> unlock(@PathVariable UUID id, @CurrentUser User actor) {
         workOrderService.unlock(id, actor);
         return ResponseEntity.noContent().build();
@@ -139,7 +142,7 @@ public class WorkOrderController {
     }
 
     @GetMapping("/{id}/attachments")
-    public ResponseEntity<List<?>> attachments(@PathVariable UUID id,
+    public ResponseEntity<List<AttachmentResponse>> attachments(@PathVariable UUID id,
                                                @CurrentUser User actor) {
         return ResponseEntity.ok(attachmentService.list(id, actor));
     }

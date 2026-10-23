@@ -7,6 +7,8 @@ import com.smms.entity.User;
 import com.smms.exception.AuthException;
 import com.smms.repository.TenantRepository;
 import com.smms.repository.UserRepository;
+import com.smms.exception.AccountLockedException;
+import com.smms.security.BruteForceProtectionService;
 import com.smms.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,16 +26,28 @@ public class AuthService {
     private final TenantRepository tenantRepo;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final BruteForceProtectionService bruteForce;
 
     @Transactional
     public AuthResponse login(LoginRequest req) {
-        User user = userRepo.findByUsernameAndDeletedAtIsNull(req.getUsername())
-            .orElseThrow(() -> new AuthException("Invalid credentials"));
+        // Check the lock BEFORE touching credentials so a locked account cannot be probed.
+        if (bruteForce.isBlocked(req.getUsername())) {
+            throw new AccountLockedException("Too many failed login attempts — try again later");
+        }
+
+        User user = userRepo.findByUsernameAndDeletedAtIsNull(req.getUsername()).orElse(null);
+        if (user == null) {
+            // unknown usernames are counted too, so existence cannot be inferred from lockout
+            bruteForce.recordFailure(req.getUsername());
+            throw new AuthException("Invalid credentials");
+        }
 
         if (!user.isActive()) throw new AuthException("Account disabled");
         if (!passwordEncoder.matches(req.getPassword(), user.getPasswordHash())) {
+            bruteForce.recordFailure(req.getUsername());
             throw new AuthException("Invalid credentials");
         }
+        bruteForce.recordSuccess(req.getUsername());
 
         user.setLastLogin(Instant.now());
         userRepo.save(user);
@@ -62,6 +76,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse refresh(String refreshToken) {
+        if (!jwtService.isRefreshToken(refreshToken)) throw new AuthException("Invalid token");
         String username = jwtService.extractUsername(refreshToken);
         User user = userRepo.findByUsernameAndDeletedAtIsNull(username)
             .orElseThrow(() -> new AuthException("Invalid token"));

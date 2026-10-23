@@ -2,14 +2,17 @@ package com.smms.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smms.entity.Notification;
+import com.smms.entity.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -25,10 +28,16 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        UUID userId = extractUserId(session);
-        if (userId != null) {
-            sessions.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(session);
-            log.debug("WS connected: user={}", userId);
+        // Bind the socket to the authenticated principal only; any userId query parameter is ignored
+        if (session.getPrincipal() instanceof Authentication auth && auth.getPrincipal() instanceof User user) {
+            sessions.computeIfAbsent(user.getId(), k -> ConcurrentHashMap.newKeySet()).add(session);
+            log.debug("WS connected: user={}", user.getId());
+            return;
+        }
+        try {
+            session.close(CloseStatus.POLICY_VIOLATION);
+        } catch (IOException e) {
+            log.warn("WS close of unauthenticated session failed", e);
         }
     }
 
@@ -54,14 +63,5 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
         } catch (Exception e) {
             log.error("WS send failed for user={}", userId, e);
         }
-    }
-
-    private UUID extractUserId(WebSocketSession session) {
-        String query = session.getUri() != null ? session.getUri().getQuery() : null;
-        if (query != null && query.contains("userId=")) {
-            try { return UUID.fromString(query.split("userId=")[1]); }
-            catch (Exception ignored) {}
-        }
-        return null;
     }
 }

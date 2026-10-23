@@ -176,7 +176,6 @@ public class DataInitializer implements CommandLineRunner {
         log.info("=================================================");
         log.info("  Default admin account created:");
         log.info("  Username : admin");
-        log.info("  Password : Admin@1234");
         log.info("  Please change the password after first login!");
         log.info("=================================================");
     }

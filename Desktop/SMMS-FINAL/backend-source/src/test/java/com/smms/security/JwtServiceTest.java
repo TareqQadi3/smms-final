@@ -116,4 +116,34 @@ class JwtServiceTest {
         String refresh = jwtService.generateRefreshToken(user);
         assertThat(jwtService.extractTenantId(refresh)).isNull();
     }
+
+    @Test
+    @DisplayName("access token is an access token and not a refresh token")
+    void accessTokenTyping() {
+        String access = jwtService.generateToken(user);
+        assertThat(jwtService.isAccessToken(access)).isTrue();
+        assertThat(jwtService.isRefreshToken(access)).isFalse();
+    }
+
+    @Test
+    @DisplayName("refresh token is rejected as an access token (SEC-003)")
+    void refreshTokenIsNotAccessToken() {
+        String refresh = jwtService.generateRefreshToken(user);
+        assertThat(jwtService.isAccessToken(refresh)).isFalse();
+        assertThat(jwtService.isRefreshToken(refresh)).isTrue();
+    }
+
+    @Test
+    @DisplayName("legacy refresh token (no typ, no role claim) is not an access token")
+    void legacyRefreshTokenWithoutRoleIsNotAccessToken() {
+        String legacy = io.jsonwebtoken.Jwts.builder()
+            .subject("tech1")
+            .issuedAt(new java.util.Date())
+            .expiration(new java.util.Date(System.currentTimeMillis() + 60_000))
+            .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                io.jsonwebtoken.io.Decoders.BASE64.decode(TEST_SECRET)))
+            .compact();
+        assertThat(jwtService.isAccessToken(legacy)).isFalse();
+        assertThat(jwtService.isRefreshToken(legacy)).isTrue();
+    }
 }

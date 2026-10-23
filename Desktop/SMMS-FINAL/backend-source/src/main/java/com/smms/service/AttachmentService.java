@@ -2,7 +2,8 @@ package com.smms.service;
 
 import com.smms.entity.*;
 import com.smms.repository.*;
-import com.smms.security.TenantSecurityService;
+import com.smms.dto.response.AttachmentResponse;
+import com.smms.security.WorkOrderAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -19,7 +20,7 @@ import java.util.*;
 public class AttachmentService {
 
     private final AttachmentRepository attachmentRepo;
-    private final TenantSecurityService tenantSecurity;
+    private final WorkOrderAccessPolicy accessPolicy;
 
     @Value("${app.upload.path:/app/uploads}")
     private String uploadPath;
@@ -28,8 +29,8 @@ public class AttachmentService {
     private String allowedExtensions;
 
     public void upload(UUID workOrderId, List<MultipartFile> files, User actor) {
-        WorkOrder wo = tenantSecurity.requireWorkOrder(workOrderId);
-        tenantSecurity.assertWorkOrderAccess(wo, actor);
+        // Same visibility rule as the ticket itself (404 when out of scope), checked before any file I/O
+        WorkOrder wo = accessPolicy.requireReadable(workOrderId, actor);
 
         files.forEach(file -> {
             validateFile(file);
@@ -53,10 +54,19 @@ public class AttachmentService {
     }
 
     @Transactional(readOnly = true)
-    public List<Attachment> list(UUID workOrderId, User actor) {
-        WorkOrder wo = tenantSecurity.requireWorkOrder(workOrderId);
-        tenantSecurity.assertWorkOrderAccess(wo, actor);
-        return attachmentRepo.findByWorkOrderId(workOrderId);
+    public List<AttachmentResponse> list(UUID workOrderId, User actor) {
+        accessPolicy.requireReadable(workOrderId, actor);
+        // DTO only: never expose the entity (server file path, lazy user graph)
+        return attachmentRepo.findByWorkOrderId(workOrderId).stream()
+            .map(a -> AttachmentResponse.builder()
+                .id(a.getId())
+                .fileName(a.getFileName())
+                .fileSize(a.getFileSize())
+                .mimeType(a.getMimeType())
+                .createdAt(a.getCreatedAt())
+                .uploadedById(a.getUploadedBy() == null ? null : a.getUploadedBy().getId())
+                .build())
+            .toList();
     }
 
     private void validateFile(MultipartFile file) {

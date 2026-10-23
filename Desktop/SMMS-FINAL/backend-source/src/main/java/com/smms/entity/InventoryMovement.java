@@ -3,6 +3,8 @@ package com.smms.entity;
 import com.smms.enums.InventoryMovementType;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 
@@ -25,7 +27,8 @@ public class InventoryMovement extends BaseEntity {
     private User actor;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 40)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(nullable = false, columnDefinition = "inventory_movement_type")
     private InventoryMovementType type;
 
     @Column(nullable = false, precision = 12, scale = 2)

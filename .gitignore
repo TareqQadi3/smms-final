@@ -17,3 +17,11 @@
 Thumbs.db
 .idea/
 .vscode/
+
+# Agent worktrees (temporary)
+.claude/worktrees/
+
+# Database backups / dumps
+backups/
+*.dump
+*.sql.gz

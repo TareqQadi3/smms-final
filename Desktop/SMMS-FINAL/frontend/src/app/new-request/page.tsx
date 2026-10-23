@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
-import { useT, statusColors } from '@/lib/i18n';
+import { useT, statusColors, tStatus } from '@/lib/i18n';
 import { workOrderApi, controlRoomApi, maintenanceTypeApi } from '@/lib/api';
 import { WorkOrder, TicketPriority } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,11 +12,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { CheckCircle, Plus } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
+import { StateMessage } from '@/components/ui/state-message';
 
 type CR = { id: string; name: string; nameAr?: string };
 type MT = { id: string; name: string; nameAr: string; controlRoomType: string };
 const PRIORITIES: TicketPriority[] = ['critical','high','medium','low'];
+// Backend SubType enum values keyed by maintenance-type display name (English, lowercased).
+// Types whose name is not listed fall back to name.toLowerCase().replace(/ /g,'_'), which
+// matches the remaining enum values (printer, network, equipment_failure, ...).
+const SUBTYPE_BY_NAME: Record<string, string> = {
+  'electrical': 'electrical',
+  'plumbing': 'plumbing',
+  'hvac': 'hvac',
+  'civil works': 'civil',
+};
+const toSubTypeValue = (name: string) =>
+  SUBTYPE_BY_NAME[name.trim().toLowerCase()] ?? name.trim().toLowerCase().replace(/\s+/g, '_');
 const SEL = "w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 
 export default function NewRequestPage() {
@@ -29,6 +41,7 @@ export default function NewRequestPage() {
   const [maintTypes,   setMaintTypes]   = useState<MT[]>([]);
   const [crLoading,    setCrLoading]    = useState(false);
   const [mtLoading,    setMtLoading]    = useState(false);
+  const [loadError,    setLoadError]    = useState(false);
 
   const [form, setForm] = useState({
     controlRoomId: '', subType: '', title: '',
@@ -42,6 +55,7 @@ export default function NewRequestPage() {
   useEffect(() => {
     const load = async () => {
       setCrLoading(true);
+      setLoadError(false);
       try {
         const [ordersRes, crRes] = await Promise.all([
           workOrderApi.getAll({ page: 0, size: 10 }),
@@ -49,7 +63,7 @@ export default function NewRequestPage() {
         ]);
         setMyOrders(ordersRes.data.content || []);
         setControlRooms(crRes.data || []);
-      } catch { /* silent */ }
+      } catch { setLoadError(true); }
       finally { setCrLoading(false); }
     };
     load();
@@ -75,7 +89,7 @@ export default function NewRequestPage() {
     try {
       await workOrderApi.create({
         controlRoomId: form.controlRoomId,
-        subType:       form.subType,     // still sent as subType for backward compat
+        subType:       form.subType,     // already an enum value (see toSubTypeValue)
         title:         form.title,
         description:   form.description,
         locationDetail:form.locationDetail,
@@ -172,7 +186,7 @@ export default function NewRequestPage() {
                           onChange={e => setForm(f => ({ ...f, subType: e.target.value }))}>
                           <option value="">{isAr ? '— اختر النوع —' : '— Select Type —'}</option>
                           {maintTypes.map(mt => (
-                            <option key={mt.id} value={mt.name}>
+                            <option key={mt.id} value={toSubTypeValue(mt.name)}>
                               {isAr ? mt.nameAr || mt.name : mt.name}
                             </option>
                           ))}
@@ -228,21 +242,25 @@ export default function NewRequestPage() {
                 <CardTitle className="text-base">{isAr ? 'بلاغاتي' : 'My Requests'}</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                {myOrders.length === 0 ? (
-                  <p className="text-center text-muted-foreground/70 py-8 text-sm">{tr.noData}</p>
+                {loadError ? (
+                  <StateMessage kind="error">
+                    {isAr ? 'تعذّر تحميل بلاغاتك وغرف التحكم. حدّث الصفحة وأعد المحاولة.' : 'Unable to load your requests and control rooms. Refresh the page and try again.'}
+                  </StateMessage>
+                ) : myOrders.length === 0 ? (
+                  <StateMessage>{isAr ? 'لم ترسل أي بلاغ بعد.' : 'You have not submitted any requests yet.'}</StateMessage>
                 ) : (
                   <div className="divide-y">
                     {myOrders.map(wo => (
                       <div key={wo.id} className="px-4 py-3">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-mono text-xs text-blue-600">{wo.ticketNumber}</span>
+                          <span className="font-mono text-xs text-blue-600 whitespace-nowrap tabular-nums"><bdi dir="ltr">{wo.ticketNumber}</bdi></span>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || ''}`}>
-                            {statusLabel[wo.status] || wo.status}
+                            {tStatus(wo.status, lang)}
                           </span>
                         </div>
                         <p className="text-sm font-medium truncate">{wo.title}</p>
-                        <p className="text-xs text-muted-foreground/70 mt-0.5">
-                          {wo.createdAt ? format(new Date(wo.createdAt), 'dd/MM/yyyy') : ''}
+                        <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                          {formatDate(wo.createdAt, lang, false, '')}
                         </p>
                       </div>
                     ))}

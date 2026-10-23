@@ -12,14 +12,13 @@ import org.springframework.stereotype.Service;
 import java.util.UUID;
 
 /**
- * Central tenant-scoped entity resolution and work-order access checks.
+ * Central tenant-scoped entity resolution (work-order access lives in WorkOrderAccessPolicy).
  * Platform admin (null tenant in context) uses findById with soft-delete filter only.
  */
 @Service
 @RequiredArgsConstructor
 public class TenantSecurityService {
 
-    private final WorkOrderRepository workOrderRepo;
     private final UserRepository userRepo;
     private final RegionRepository regionRepo;
     private final CenterRepository centerRepo;
@@ -31,18 +30,6 @@ public class TenantSecurityService {
         if (entityTenantId == null || !ctx.equals(entityTenantId)) {
             throw new AccessDeniedException("Cross-tenant access denied");
         }
-    }
-
-    public WorkOrder requireWorkOrder(UUID id) {
-        UUID tenantId = TenantContext.get();
-        WorkOrder wo = (tenantId != null)
-            ? workOrderRepo.findByIdAndTenantIdAndDeletedAtIsNull(id, tenantId)
-                .orElseThrow(() -> new ResourceNotFoundException("WorkOrder not found: " + id))
-            : workOrderRepo.findById(id)
-                .filter(w -> w.getDeletedAt() == null)
-                .orElseThrow(() -> new ResourceNotFoundException("WorkOrder not found: " + id));
-        assertSameTenant(wo.getTenantId());
-        return wo;
     }
 
     public User requireUser(UUID id) {
@@ -99,17 +86,6 @@ public class TenantSecurityService {
                 .orElseThrow(() -> new ResourceNotFoundException("ControlRoom not found"));
         assertSameTenant(cr.getTenantId());
         return cr;
-    }
-
-    /** Technicians may only access work orders assigned to them. */
-    public void assertWorkOrderAccess(WorkOrder wo, User actor) {
-        if (actor == null) return;
-        if (actor.getRole() == UserRole.technician) {
-            if (wo.getAssignedTo() == null
-                    || !wo.getAssignedTo().getId().equals(actor.getId())) {
-                throw new AccessDeniedException("Not assigned to this work order");
-            }
-        }
     }
 
     /** Technicians always see only their own assignments regardless of client filter. */
