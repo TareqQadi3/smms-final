@@ -117,3 +117,20 @@ Status for all: **open — found by code review, not yet reproduced in browser.*
 | DEF-010 | Low | `other` and `technician` allowed by `@PreAuthorize` to create tickets but always rejected by service; `other` has no menu items | `controller/WorkOrderController.java:36`; `service/WorkOrderService.java:340-350`; `Sidebar.tsx:34-110` | QA-807, QA-808, QA-021 |
 | DEF-011 | Low | No `scheduledDate` validation (can precede creation) | `service/WorkOrderService.java:323-325` | QA-982 |
 | DEF-012 | Low | Warehouse lands on `/dashboard` but `/api/dashboard/*` excludes warehouse | `login/page.tsx:51`; `controller/DashboardController.java:20-33` | QA-017 |
+
+
+### Defect status update (2026-10-23)
+
+QA rows above remain NOT TESTED; the QA campaign has not started. Only defect statuses changed:
+
+| ID | Status |
+|---|---|
+| DEF-001 | Fixed in `35a0edf` — verified on local sandbox API (not yet in Codespace) |
+| DEF-002 | Fixed in `35a0edf` — verified on local sandbox API (not yet in Codespace) |
+| DEF-003 | Fixed in `35a0edf` — verified on local sandbox API (not yet in Codespace) |
+| DEF-004 | Fixed in `c46cafb` — verified on local sandbox API (not yet in Codespace) |
+| DEF-006 | Fixed in `35a0edf` — verified on local sandbox API (not yet in Codespace) |
+| DEF-005 | Open — needs product visibility rule |
+| DEF-007, DEF-008, DEF-009, DEF-010, DEF-011, DEF-012 | Status not re-verified in this update; treat as open. Note `35a0edf` also tightened generic `/transition` rules, which may affect DEF-007 (unverified). |
+
+Audit finding IDs fixed in the same commits (SEC-002/003/004/006/008/009) are tracked in [test-plan.md](test-plan.md) "Updates after audit/fixes". Findings files themselves lived in the sandbox scratchpad and were not committed.

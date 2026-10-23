@@ -266,3 +266,33 @@ Entry: QA-050…053 executed; blocking contract defects fixed or explicitly acce
 Exit: every QA ID has PASS/FAIL/BLOCKED/NOT TESTED with evidence; every FAIL has a defect entry; fixes have regression tests and retest results.
 
 Evidence: `docs/qa/evidence/QA-###-<step>.png` — see [evidence/README.md](evidence/README.md).
+
+
+## Updates after audit/fixes (2026-10-23)
+
+**Facts.** Code fixes were committed after the audits (`35a0edf`, `c46cafb`, `b70ffed`) and verified against the **local sandbox API only** (Claude Code Remote cloud sandbox, ephemeral). They are **not yet verified in the user's Codespace**. The QA campaign has **not started**; no QA row below is PASS.
+
+### New tests to add (execute in the target Codespace after seeding)
+
+| New test | Expected |
+|---|---|
+| Token typ: use a refresh token as a bearer token on any API | 403 |
+| Login lockout: 5+ failed logins for one user | HTTP 429 |
+| Reset-password with JSON body | 204 |
+| Reset-password with password in the query string | 400; password absent from nginx access logs |
+| Self-update (user edits own profile) tries to change role/scope | role/scope unchanged |
+| Generic `/transition` to `assigned` (and out of `waiting_approval`, and reopen) | 400 |
+| Attachment upload (multipart) | 201 |
+| Lowercase status/subType values end-to-end (scenario A) | accepted, filters and transitions work |
+| Create-ticket response | contains `ticketNumber` |
+| Resident lock attempt | 403 |
+
+### Defect/finding status
+
+| ID | Status |
+|---|---|
+| DEF-001, DEF-002, DEF-003, DEF-004, DEF-006 | **FIXED in code + verified on local sandbox API** (not yet in the user's Codespace) |
+| SEC-002, SEC-003, SEC-004, SEC-006, SEC-008, SEC-009 | **FIXED in code + verified on local sandbox API** (not yet in the user's Codespace) |
+| DEF-005 / SEC-005, SEC-001, DB-001, DB-002, DB-003, DB-005, SEC-011 | Still open; need a user decision or migration (see [project-memory.md](../project-memory.md)) |
+
+Open question: visibility rule for residents/departments (blocks DEF-005 retest design).

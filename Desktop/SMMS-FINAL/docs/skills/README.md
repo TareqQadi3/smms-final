@@ -160,3 +160,64 @@ HTML-to-video renderer plus agent skills. Docs: https://hyperframes.heygen.com
 - HyperFrames CLI: **ready** with the `PRODUCER_HEADLESS_SHELL_PATH` env var and locally vendored GSAP; 3 s test render succeeded.
 - brag: installed, workflow not exercised; depends on HyperFrames working (it does via the CLI path).
 - Re-install everything in a new sandbox/Codespace/local machine using the commands above; nothing here persists.
+
+
+---
+
+# Complete inventory (updated 2026-10-23)
+
+Organized by **where the skill lives**, because that decides whether it is available in a given environment.
+
+**Facts** (verified by `ls` on 2026-10-23).
+
+## (a) User-level, remote sandbox: `/root/.claude/skills` (ephemeral)
+
+Exists only inside the Claude Code Remote container used for this session. Not in the Codespace, not on the user's laptop; gone when the container is reclaimed.
+
+| Skill | Note |
+|---|---|
+| arena | see section 1 |
+| better-accessibility, better-colors, better-interface, better-layout, better-typography, better-ui, better-writing | from jakubkrehel/skills (8 UI skills with interface-review) |
+| interface-review | from jakubkrehel/skills |
+| security-arch-review, threat-model | secureIO skills (installed user-level) |
+| session-start-hook | frontmatter `name: startup-hook-skill`; pre-existing in the sandbox |
+
+Total: 12 skill folders. `/root/.claude/skills/synced` is a directory of synced data, **not a skill**.
+
+User-level plugins (plugin cache `/root/.claude/plugins/cache`): **brag 0.4.0**, **hyperframes 0.8.187** (see sections 2 and 3).
+
+Reviewed and **rejected**: rls-audit (no license; targets Supabase RLS, not applicable), nicohodt ui-ux (overlaps better-*; sends data to the Gemini API and loads `.env`). **Deferred**: security-scan, security-audit (need semgrep/trufflehog/trivy installed).
+
+## (b) Repo-level: `.claude/skills` (durable, travels with the repo)
+
+Committed in the repository, so it is available in **Codespaces and local clones** whenever the repo is opened as the project.
+
+| Group | Count | Commit | Detail |
+|---|---|---|---|
+| `smms-*` project skills: smms-database-safety, smms-e2e-qa, smms-maintenance-workflows, smms-rtl-ui-review, smms-security-review, smms-tenant-isolation | 6 | `626894b` | [audit.md](audit.md) |
+| Imported from spruvex-r | 105 | `be5a2c8` | [import-report.md](import-report.md) (humanizer excluded as empty; 0 conflicts) |
+| **Total** | **111** | | 111 folders under `.claude/skills` |
+
+## Discovery and invocation
+
+- Claude Code scans `~/.claude/skills/<name>/SKILL.md` (user-level) and `<repo>/.claude/skills/<name>/SKILL.md` (project-level) at session start; a new session (or restart) is needed after adding one.
+- Invoke explicitly with `/<name>` (plugin skills are namespaced, e.g. `/brag:brag`), or let the model pick one from its `description` frontmatter.
+- Project-level skills load only when the session's working directory is the repo.
+
+## Same-name overlaps (5)
+
+`better-accessibility`, `better-colors`, `better-layout`, `better-typography`, `better-ui` exist at **both** levels. Verified: the folder contents **differ** (different versions). Which copy wins on a name clash is **Assumption**: not tested here; if it matters, remove one copy or rename it.
+
+## Installing the user-level skills on your own machine
+
+Skills are plain folders. For each source repo (Arena command is in section 1):
+
+```bash
+git clone <skill-source-repo> /tmp/src
+mkdir -p ~/.claude/skills
+cp -r /tmp/src/skills/<skill-name> ~/.claude/skills/   # then restart Claude Code
+```
+
+- Arena: `https://github.com/0alfares082/arena-skill-16` (commands in section 1).
+- brag and HyperFrames: plugin routes in sections 2 and 3.
+- jakubkrehel/skills and secureIO skills: **Open question / not recorded**: exact source URLs and upstream install commands were not captured in this file; copy the folders from the upstream repos as above. In Codespaces/local the repo-level versions of 5 `better-*` skills are already present.
