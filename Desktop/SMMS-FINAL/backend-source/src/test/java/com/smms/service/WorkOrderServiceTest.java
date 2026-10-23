@@ -216,7 +216,7 @@ class WorkOrderServiceTest {
         User other = user(UserRole.other);
         when(accessPolicy.resolveScope(other)).thenReturn(WorkOrderScope.none());
 
-        Page<?> page = service.search(null, null, null, null, null, 0, 20, other);
+        Page<?> page = service.search(null, null, null, null, null, org.springframework.data.domain.PageRequest.of(0, 20), other);
 
         assertThat(page.getContent()).isEmpty();
         verify(workOrderRepo, never()).findAll(any(Specification.class), any(Pageable.class));
@@ -235,7 +235,7 @@ class WorkOrderServiceTest {
         when(policySpec.and(any())).thenReturn(combined);
         when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
 
-        service.search(UUID.randomUUID(), null, null, null, null, 0, 20, actor);
+        service.search(UUID.randomUUID(), null, null, null, null, org.springframework.data.domain.PageRequest.of(0, 20), actor);
 
         verify(accessPolicy, times(1)).specFor(scope);
         // The caller filter is ANDed onto the policy spec, never the other way around

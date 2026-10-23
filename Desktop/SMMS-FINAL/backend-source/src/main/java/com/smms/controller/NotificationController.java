@@ -5,14 +5,22 @@ import com.smms.entity.User;
 import com.smms.service.NotificationService;
 import com.smms.util.CurrentUser;
 import lombok.RequiredArgsConstructor;
+import com.smms.util.PageRequests;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/notifications")
 @RequiredArgsConstructor
 public class NotificationController {
+
+    private static final Map<String, String> SORT_FIELDS = Map.of("createdAt", "createdAt");
 
     private final NotificationService notificationService;
 
@@ -20,8 +28,11 @@ public class NotificationController {
     public ResponseEntity<Page<NotificationResponse>> list(
                                   @RequestParam(defaultValue = "0") int page,
                                   @RequestParam(defaultValue = "20") int size,
+                                  @RequestParam(required = false) List<String> sort,
                                   @CurrentUser User actor) {
-        return ResponseEntity.ok(notificationService.list(actor.getId(), page, size));
+        Pageable pageable = PageRequests.of(page, size, sort, SORT_FIELDS,
+            Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(notificationService.list(actor.getId(), pageable));
     }
 
     @GetMapping("/unread-count")

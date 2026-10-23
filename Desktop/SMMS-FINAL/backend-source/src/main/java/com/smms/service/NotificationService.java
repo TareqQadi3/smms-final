@@ -52,8 +52,8 @@ public class NotificationService {
     }
 
     @Transactional(readOnly = true)
-    public Page<NotificationResponse> list(UUID userId, int page, int size) {
-        return notifRepo.findByUserIdOrderByCreatedAtDesc(userId, PageRequest.of(page, size))
+    public Page<NotificationResponse> list(UUID userId, Pageable pageable) {
+        return notifRepo.findByUserId(userId, pageable)
             .map(n -> NotificationResponse.builder()
                 .id(n.getId())
                 .type(n.getType())

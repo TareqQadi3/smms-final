@@ -14,7 +14,10 @@ import com.smms.service.WorkOrderService;
 import com.smms.util.CurrentUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import com.smms.util.PageRequests;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -29,6 +33,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @PreAuthorize("isAuthenticated()")
 public class WorkOrderController {
+
+    /** API sort name to entity property. priority/status sort by enum declaration order. */
+    private static final Map<String, String> SORT_FIELDS = Map.of(
+        "createdAt", "createdAt", "updatedAt", "updatedAt", "priority", "priority",
+        "status", "status", "ticketNumber", "ticketNumber", "slaDeadline", "slaDeadline");
 
     private final WorkOrderService workOrderService;
     private final AttachmentService attachmentService;
@@ -50,9 +59,12 @@ public class WorkOrderController {
         @RequestParam(required = false) UUID assignedToId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size,
+        @RequestParam(required = false) List<String> sort,
         @CurrentUser User actor) {
+        Pageable pageable = PageRequests.of(page, size, sort, SORT_FIELDS,
+            Sort.by(Sort.Direction.DESC, "createdAt"));
         return ResponseEntity.ok(workOrderService.search(
-            centerId, controlRoomId, status, priority, assignedToId, page, size, actor));
+            centerId, controlRoomId, status, priority, assignedToId, pageable, actor));
     }
 
     @GetMapping("/{id}")

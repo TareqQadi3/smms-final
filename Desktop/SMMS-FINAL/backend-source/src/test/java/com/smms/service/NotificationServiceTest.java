@@ -60,4 +60,19 @@ class NotificationServiceTest {
         verify(ws, times(1)).sendToUser(eq(operator.getId()), any(Notification.class));
         verify(ws, times(1)).sendToUser(any(UUID.class), any(Notification.class));
     }
+
+    @Test
+    void listUsesCallerPageableAndOnlyTheCallersNotifications() {
+        NotificationRepository notifRepo = mock(NotificationRepository.class);
+        NotificationService service = new NotificationService(notifRepo,
+            mock(UserControlRoomAccessRepository.class), mock(NotificationWebSocketHandler.class));
+        UUID userId = UUID.randomUUID();
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+            1, 10, org.springframework.data.domain.Sort.by("createdAt").descending());
+        when(notifRepo.findByUserId(userId, pageable)).thenReturn(org.springframework.data.domain.Page.empty(pageable));
+
+        service.list(userId, pageable);
+
+        verify(notifRepo).findByUserId(userId, pageable);
+    }
 }

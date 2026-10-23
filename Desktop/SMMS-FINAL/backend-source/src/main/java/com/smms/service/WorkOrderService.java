@@ -294,11 +294,11 @@ public class WorkOrderService {
     @Transactional(readOnly = true)
     public Page<WorkOrderResponse> search(UUID centerId, UUID controlRoomId,
                                            TicketStatus status, TicketPriority priority,
-                                           UUID assignedToId, int page, int size,
+                                           UUID assignedToId, Pageable pageable,
                                            User actor) {
         WorkOrderScope scope = accessPolicy.resolveScope(actor);
         // No visibility at all: empty page without touching the database
-        if (scope.isNone()) return Page.empty(PageRequest.of(page, size));
+        if (scope.isNone()) return Page.empty(pageable);
 
         UUID effectiveAssignedTo = tenantSecurity.resolveAssignedToFilter(actor, assignedToId);
         // Caller filters are ANDed after the scope predicate, so they can only narrow the result
@@ -311,11 +311,10 @@ public class WorkOrderService {
             if (effectiveAssignedTo != null) {
                 predicates.add(cb.equal(root.get("assignedTo").get("id"), effectiveAssignedTo));
             }
-            query.orderBy(cb.desc(root.get("createdAt")));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         Specification<WorkOrder> spec = accessPolicy.specFor(scope).and(filters);
-        return workOrderRepo.findAll(spec, PageRequest.of(page, size))
+        return workOrderRepo.findAll(spec, pageable)
             .map(mapper::toResponse);
     }
 
