@@ -34,8 +34,8 @@ public class AdminController {
     // ── Regions ──────────────────────────────────────────────
     @GetMapping("/regions")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<RegionResponse>> regions() {
-        return ResponseEntity.ok(regionService.listAll());
+    public ResponseEntity<List<RegionResponse>> regions(@CurrentUser User actor) {
+        return ResponseEntity.ok(regionService.listAll(actor));
     }
 
     @PostMapping("/regions")
@@ -56,8 +56,9 @@ public class AdminController {
     // ── Centers ───────────────────────────────────────────────
     @GetMapping("/centers")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<CenterResponse>> centers(@RequestParam(required = false) UUID regionId) {
-        return ResponseEntity.ok(centerService.list(regionId));
+    public ResponseEntity<List<CenterResponse>> centers(@RequestParam(required = false) UUID regionId,
+                                                        @CurrentUser User actor) {
+        return ResponseEntity.ok(centerService.list(regionId, actor));
     }
 
     @PostMapping("/centers")
@@ -82,17 +83,21 @@ public class AdminController {
             @RequestParam(required = false) UUID centerId,
             @CurrentUser User actor) {
 
-        // Roles that see ALL CRs in their scope (managers & operators)
-        if (isCenterScopedRole(actor.getRole())) {
-            UUID effectiveCenterId;
-            if (actor.getRole() == UserRole.system_admin
-                    || actor.getRole() == UserRole.region_supervisor) {
-                effectiveCenterId = centerId; // can pass any centerId
-            } else {
-                effectiveCenterId = actor.getCenter() != null
-                    ? actor.getCenter().getId() : centerId;
-            }
-            return ResponseEntity.ok(controlRoomService.list(effectiveCenterId));
+        UserRole role = actor.getRole();
+        if (role == UserRole.system_admin) {
+            return ResponseEntity.ok(controlRoomService.list(centerId));
+        }
+        if (role == UserRole.region_supervisor) {
+            // Only rooms of their own region; a centerId of another region matches nothing
+            UUID regionId = actor.getRegion() != null ? actor.getRegion().getId() : null;
+            return ResponseEntity.ok(regionId == null
+                ? List.<ControlRoomResponse>of() : controlRoomService.listByRegion(regionId, centerId));
+        }
+        if (isCenterScopedRole(role)) {
+            // The request's centerId is ignored: these roles only ever see their own center's rooms
+            UUID ownCenterId = actor.getCenter() != null ? actor.getCenter().getId() : null;
+            return ResponseEntity.ok(ownCenterId == null
+                ? List.<ControlRoomResponse>of() : controlRoomService.list(ownCenterId));
         }
 
         // resident / department / other / technician / warehouse:
@@ -107,11 +112,9 @@ public class AdminController {
         return ResponseEntity.ok(controlRoomService.listByIds(crIds));
     }
 
-    /** Roles that manage or operate — see all CRs in their center */
+    /** Roles that manage or operate inside one center: they see all CRs of that center */
     private boolean isCenterScopedRole(UserRole role) {
-        return role == UserRole.system_admin
-            || role == UserRole.region_supervisor
-            || role == UserRole.hospital_supervisor
+        return role == UserRole.hospital_supervisor
             || role == UserRole.maintenance_manager
             || role == UserRole.electrical_manager
             || role == UserRole.control_room;   // CR operators see their own center's CRs
