@@ -20,6 +20,8 @@ export interface AuthUser {
   phone?: string;
   role: UserRole;
   active: boolean;
+  // true while the account still uses a default or reset password (set by the backend at login)
+  passwordChangeRequired?: boolean;
   center?: { id: string; name: string; nameAr: string; code: string };
 }
 

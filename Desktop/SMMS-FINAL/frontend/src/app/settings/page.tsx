@@ -31,7 +31,7 @@ interface Alert {
 }
 
 function SettingsPage() {
-  const { user, lang, setLang } = useAuthStore();
+  const { user, lang, setLang, clearPasswordChangeRequired } = useAuthStore();
   const tr = useT(lang);
   const searchParams = useSearchParams();
   const initialTab = (searchParams.get('tab') as Tab) || 'profile';
@@ -94,6 +94,7 @@ function SettingsPage() {
     try {
       await meApi.changePassword(pwd.currentPassword, pwd.newPassword);
       setPwd({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      clearPasswordChangeRequired();
       showAlert('success', lang === 'ar' ? 'تم تغيير كلمة المرور بنجاح' : 'Password changed successfully');
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;

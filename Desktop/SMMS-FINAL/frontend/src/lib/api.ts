@@ -18,7 +18,11 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401 && typeof window !== 'undefined') {
+    // A 401 from the login or logout call itself is a normal answer, not an expired session:
+    // redirecting there would reload /login and lose the error message.
+    const url: string = err.config?.url ?? '';
+    const isAuthCall = url.endsWith('/auth/login') || url.endsWith('/auth/logout');
+    if (err.response?.status === 401 && !isAuthCall && typeof window !== 'undefined') {
       localStorage.removeItem('smms_token');
       localStorage.removeItem('smms_user');
       window.location.href = '/login';
@@ -31,6 +35,9 @@ api.interceptors.response.use(
 export const authApi = {
   login: (username: string, password: string) =>
     api.post('/auth/login', { username, password }),
+  // Fire-and-forget: the server revokes the session, the client clears its storage regardless.
+  logout: (token?: string | null) =>
+    api.post('/auth/logout', null, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined),
 };
 
 // ── Dashboard ─────────────────────────────────────────────
@@ -66,6 +73,9 @@ export const workOrderApi = {
   getAssignableTechnicians: (id: string) =>
     api.get(`/work-orders/${id}/assignable-technicians`),
   getAttachments: (id: string) => api.get(`/work-orders/${id}/attachments`),
+  // Blob download with the Bearer header (never put the token in a URL). Needs the backend endpoint.
+  downloadAttachment: (id: string, attachmentId: string) =>
+    api.get<Blob>(`/work-orders/${id}/attachments/${attachmentId}/content`, { responseType: 'blob' }),
 };
 
 // ── Users ─────────────────────────────────────────────────

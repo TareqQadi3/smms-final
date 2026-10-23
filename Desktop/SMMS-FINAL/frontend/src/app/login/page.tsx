@@ -34,7 +34,7 @@ export default function LoginPage() {
     setError('');
     try {
       const res = await authApi.login(username, password);
-      const { token, role, userId, username: uname, fullName, fullNameAr, centerId, centerName, centerNameAr } = res.data;
+      const { token, role, userId, username: uname, fullName, fullNameAr, centerId, centerName, centerNameAr, passwordChangeRequired } = res.data;
       const user = {
         id:         userId,
         username:   uname || username,
@@ -43,10 +43,12 @@ export default function LoginPage() {
         email:      '',
         role,
         active:     true,
+        passwordChangeRequired: passwordChangeRequired === true,
         ...(centerId ? { center: { id: centerId, name: centerName || '', nameAr: centerNameAr || '', code: '' } } : {}),
       };
       setAuth(user, token);
-      if (role === 'technician') router.push('/my-tasks');
+      if (passwordChangeRequired === true) router.push('/settings?tab=security');
+      else if (role === 'technician') router.push('/my-tasks');
       else if (role === 'resident' || role === 'department') router.push('/new-request');
       else router.push('/dashboard');
     } catch {
