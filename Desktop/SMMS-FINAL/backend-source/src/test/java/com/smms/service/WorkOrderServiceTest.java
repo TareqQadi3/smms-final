@@ -62,6 +62,9 @@ class WorkOrderServiceTest {
         service = new WorkOrderService(workOrderRepo, historyRepo, workflowEngine,
             notificationService, mapper, mock(PlanEnforcementService.class),
             tenantSecurity, accessPolicy, em, userRepo);
+        when(mapper.toResponse(any(WorkOrder.class))).thenAnswer(i -> com.smms.dto.response.WorkOrderResponse.builder().build());
+        // create() also looks for duplicate candidates; default to none
+        when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
     }
 
     @AfterEach
@@ -116,6 +119,7 @@ class WorkOrderServiceTest {
 
     // F5 generic transition bypass
 
+    // M3: wrong-endpoint transitions are WorkflowException (422), no longer IllegalArgumentException (400)
     @Test
     void genericTransitionToAssignedRejected() {
         UUID id = UUID.randomUUID();
@@ -127,7 +131,7 @@ class WorkOrderServiceTest {
         req.setTargetStatus(TicketStatus.ASSIGNED);
 
         assertThatThrownBy(() -> service.transition(id, req, cro))
-            .isInstanceOf(IllegalArgumentException.class)
+            .isInstanceOf(com.smms.exception.WorkflowException.class)
             .hasMessageContaining("/assign");
         assertThat(wo.getStatus()).isEqualTo(TicketStatus.UNDER_REVIEW);
         verify(workOrderRepo, never()).save(any());
@@ -137,13 +141,13 @@ class WorkOrderServiceTest {
     void dedicatedEndpointRules() {
         assertThatThrownBy(() -> WorkOrderService.rejectDedicatedEndpointTransition(
             TicketStatus.WAITING_APPROVAL, TicketStatus.IN_PROGRESS, UserRole.operating_company_manager))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(com.smms.exception.WorkflowException.class);
         // system_admin keeps the UI path for approval
         WorkOrderService.rejectDedicatedEndpointTransition(
             TicketStatus.WAITING_APPROVAL, TicketStatus.IN_PROGRESS, UserRole.system_admin);
         assertThatThrownBy(() -> WorkOrderService.rejectDedicatedEndpointTransition(
             TicketStatus.COMPLETED, TicketStatus.IN_PROGRESS, UserRole.control_room))
-            .isInstanceOf(IllegalArgumentException.class);
+            .isInstanceOf(com.smms.exception.WorkflowException.class);
         // ordinary moves untouched
         WorkOrderService.rejectDedicatedEndpointTransition(
             TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS, UserRole.technician);

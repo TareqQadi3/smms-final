@@ -38,7 +38,7 @@ class NotificationServiceTest {
         NotificationRepository notifRepo = mock(NotificationRepository.class);
         UserControlRoomAccessRepository accessRepo = mock(UserControlRoomAccessRepository.class);
         NotificationWebSocketHandler ws = mock(NotificationWebSocketHandler.class);
-        NotificationService service = new NotificationService(notifRepo, accessRepo, ws);
+        NotificationService service = new NotificationService(notifRepo, accessRepo, ws, mock(com.smms.repository.UserRepository.class));
 
         User operator = user(UserRole.control_room, true);
         ControlRoom cr = new ControlRoom();
@@ -65,7 +65,8 @@ class NotificationServiceTest {
     void listUsesCallerPageableAndOnlyTheCallersNotifications() {
         NotificationRepository notifRepo = mock(NotificationRepository.class);
         NotificationService service = new NotificationService(notifRepo,
-            mock(UserControlRoomAccessRepository.class), mock(NotificationWebSocketHandler.class));
+            mock(UserControlRoomAccessRepository.class), mock(NotificationWebSocketHandler.class),
+            mock(com.smms.repository.UserRepository.class));
         UUID userId = UUID.randomUUID();
         org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
             1, 10, org.springframework.data.domain.Sort.by("createdAt").descending());

@@ -3,6 +3,7 @@ package com.smms.service;
 import com.smms.entity.*;
 import com.smms.repository.*;
 import com.smms.dto.response.AttachmentResponse;
+import com.smms.util.InputSanitizer;
 import com.smms.security.WorkOrderAccessPolicy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,7 @@ public class AttachmentService {
 
     private final AttachmentRepository attachmentRepo;
     private final WorkOrderAccessPolicy accessPolicy;
+    private final TicketHistoryRepository historyRepo;
 
     @Value("${app.upload.path:/app/uploads}")
     private String uploadPath;
@@ -32,6 +34,7 @@ public class AttachmentService {
         // Same visibility rule as the ticket itself (404 when out of scope), checked before any file I/O
         WorkOrder wo = accessPolicy.requireReadable(workOrderId, actor);
 
+        List<String> names = new ArrayList<>();
         files.forEach(file -> {
             validateFile(file);
             String filename = UUID.randomUUID() + "_" + sanitize(file.getOriginalFilename());
@@ -50,7 +53,19 @@ public class AttachmentService {
                 .fileSize((int) file.getSize())
                 .mimeType(file.getContentType())
                 .build());
+            names.add(sanitize(file.getOriginalFilename()));
         });
+        if (names.isEmpty()) return;
+        // Audit: one history row per upload request (status unchanged), same transaction as the rows
+        historyRepo.save(TicketHistory.builder()
+            .workOrder(wo)
+            .actor(actor)
+            .actorRole(actor.getRole())
+            .fromStatus(wo.getStatus())
+            .toStatus(wo.getStatus())
+            .stage(wo.getCurrentStage())
+            .note(InputSanitizer.clean("Attachments added (" + names.size() + "): " + String.join(", ", names), 1000))
+            .build());
     }
 
     @Transactional(readOnly = true)

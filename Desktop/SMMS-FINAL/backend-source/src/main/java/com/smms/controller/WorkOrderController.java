@@ -1,9 +1,12 @@
 package com.smms.controller;
 
+import com.smms.dto.request.AssignRequest;
 import com.smms.dto.request.CreateWorkOrderRequest;
+import com.smms.dto.request.RequestInfoRequest;
 import com.smms.dto.request.TransitionRequest;
 import com.smms.dto.response.AssignableTechnicianResponse;
 import com.smms.dto.response.AttachmentResponse;
+import com.smms.dto.response.DuplicateCandidateResponse;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.User;
@@ -81,13 +84,49 @@ public class WorkOrderController {
         return ResponseEntity.ok(workOrderService.transition(id, req, actor));
     }
 
+    /**
+     * Assigns a technician. technicianId and note are accepted as query parameters (web client) or
+     * as a JSON body {technicianId, note} (mobile/API clients); query parameters win when both are
+     * present. Missing technicianId is a 400 with an explicit message.
+     */
     @PostMapping("/{id}/assign")
     @PreAuthorize("hasAnyRole('control_room','maintenance_manager','system_admin')")
     public ResponseEntity<WorkOrderResponse> assign(@PathVariable UUID id,
-                                                    @RequestParam UUID technicianId,
+                                                    @RequestParam(required = false) UUID technicianId,
                                                     @RequestParam(required = false) String note,
+                                                    @RequestBody(required = false) AssignRequest body,
                                                     @CurrentUser User actor) {
-        return ResponseEntity.ok(workOrderService.assign(id, technicianId, note, actor));
+        UUID tech = technicianId != null ? technicianId : (body != null ? body.getTechnicianId() : null);
+        String effectiveNote = note != null ? note : (body != null ? body.getNote() : null);
+        if (tech == null) {
+            throw new IllegalArgumentException("technicianId is required (query parameter or JSON body)");
+        }
+        return ResponseEntity.ok(workOrderService.assign(id, tech, effectiveNote, actor));
+    }
+
+    /** Return for information: asks the requester for more detail (stage info_requested). */
+    @PostMapping("/{id}/request-info")
+    @PreAuthorize("hasAnyRole('control_room','maintenance_manager')")
+    public ResponseEntity<WorkOrderResponse> requestInfo(@PathVariable UUID id,
+                                                         @Valid @RequestBody RequestInfoRequest req,
+                                                         @CurrentUser User actor) {
+        return ResponseEntity.ok(workOrderService.requestInfo(id, req.getNote(), actor));
+    }
+
+    /** The requester answers an information request; the ticket returns to plain under_review. */
+    @PostMapping("/{id}/provide-info")
+    public ResponseEntity<WorkOrderResponse> provideInfo(@PathVariable UUID id,
+                                                         @Valid @RequestBody RequestInfoRequest req,
+                                                         @CurrentUser User actor) {
+        return ResponseEntity.ok(workOrderService.provideInfo(id, req.getNote(), actor));
+    }
+
+    /** Non-blocking duplicate hints, limited to tickets the caller may see. */
+    @GetMapping("/{id}/possible-duplicates")
+    @PreAuthorize("hasAnyRole('control_room','maintenance_manager','hospital_supervisor','electrical_manager','region_supervisor','system_admin')")
+    public ResponseEntity<List<DuplicateCandidateResponse>> possibleDuplicates(@PathVariable UUID id,
+                                                                               @CurrentUser User actor) {
+        return ResponseEntity.ok(workOrderService.possibleDuplicates(id, actor));
     }
 
     /** Technician picker for the assign dialog; same roles as assign, scoped to the ticket's center. */

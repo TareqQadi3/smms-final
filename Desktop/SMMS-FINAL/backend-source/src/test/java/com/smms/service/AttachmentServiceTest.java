@@ -7,6 +7,7 @@ import com.smms.entity.WorkOrder;
 import com.smms.enums.UserRole;
 import com.smms.exception.ResourceNotFoundException;
 import com.smms.repository.AttachmentRepository;
+import com.smms.repository.TicketHistoryRepository;
 import com.smms.security.WorkOrderAccessPolicy;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ class AttachmentServiceTest {
 
     private AttachmentRepository attachmentRepo;
     private WorkOrderAccessPolicy accessPolicy;
+    private TicketHistoryRepository historyRepo;
     private AttachmentService service;
 
     @TempDir
@@ -39,7 +41,8 @@ class AttachmentServiceTest {
     void setUp() {
         attachmentRepo = mock(AttachmentRepository.class);
         accessPolicy = mock(WorkOrderAccessPolicy.class);
-        service = new AttachmentService(attachmentRepo, accessPolicy);
+        historyRepo = mock(TicketHistoryRepository.class);
+        service = new AttachmentService(attachmentRepo, accessPolicy, historyRepo);
         ReflectionTestUtils.setField(service, "uploadPath", tmp.toString());
         ReflectionTestUtils.setField(service, "allowedExtensions", "jpg,jpeg,png,pdf,doc,docx");
     }
@@ -83,6 +86,30 @@ class AttachmentServiceTest {
     }
 
     @Test
+    void uploadWritesOneAuditHistoryRowPerRequest() throws Exception {
+        UUID id = UUID.randomUUID();
+        User actor = user();
+        WorkOrder wo = new WorkOrder();
+        wo.setId(id);
+        wo.setStatus(com.smms.enums.TicketStatus.IN_PROGRESS);
+        wo.setCurrentStage("in_progress");
+        when(accessPolicy.requireReadable(id, actor)).thenReturn(wo);
+        MockMultipartFile a = new MockMultipartFile("file", "a.png", "image/png", new byte[] {1});
+        MockMultipartFile b = new MockMultipartFile("file", "b.jpg", "image/jpeg", new byte[] {2});
+
+        service.upload(id, List.of(a, b), actor);
+
+        verify(attachmentRepo, times(2)).save(any(Attachment.class));
+        org.mockito.ArgumentCaptor<com.smms.entity.TicketHistory> cap =
+            org.mockito.ArgumentCaptor.forClass(com.smms.entity.TicketHistory.class);
+        verify(historyRepo, times(1)).save(cap.capture());
+        assertThat(cap.getValue().getToStatus()).isEqualTo(com.smms.enums.TicketStatus.IN_PROGRESS);
+        assertThat(cap.getValue().getFromStatus()).isEqualTo(com.smms.enums.TicketStatus.IN_PROGRESS);
+        assertThat(cap.getValue().getActor()).isSameAs(actor);
+        assertThat(cap.getValue().getNote()).contains("(2)").contains("a.png").contains("b.jpg");
+    }
+
+    @Test
     void uploadOutOfScopeWritesNothing() throws Exception {
         UUID id = UUID.randomUUID();
         User actor = user();
@@ -92,6 +119,7 @@ class AttachmentServiceTest {
         assertThatThrownBy(() -> service.upload(id, List.of(f), actor)).isInstanceOf(ResourceNotFoundException.class);
 
         verify(attachmentRepo, never()).save(any());
+        verifyNoInteractions(historyRepo);
         try (var files = Files.list(tmp)) {
             assertThat(files.count()).isZero();
         }

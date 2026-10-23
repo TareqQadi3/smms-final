@@ -57,6 +57,10 @@ export const workOrderApi = {
     api.post(`/work-orders/${id}/close`, null, { params: note ? { note } : {} }),
   reopen:     (id: string, note: string) =>
     api.post(`/work-orders/${id}/reopen`, null, { params: { note } }),
+  // Return for information (stage info_requested, status stays under_review)
+  requestInfo: (id: string, note: string) => api.post(`/work-orders/${id}/request-info`, { note }),
+  provideInfo: (id: string, note: string) => api.post(`/work-orders/${id}/provide-info`, { note }),
+  getPossibleDuplicates: (id: string) => api.get(`/work-orders/${id}/possible-duplicates`),
   getHistory: (id: string) => api.get(`/work-orders/${id}/history`),
   // Technician picker: active technicians of the ticket's center (does not need the user list)
   getAssignableTechnicians: (id: string) =>

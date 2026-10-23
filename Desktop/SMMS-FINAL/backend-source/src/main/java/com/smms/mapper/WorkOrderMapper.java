@@ -11,6 +11,7 @@ public interface WorkOrderMapper {
     @Mapping(target = "assignedTo",  source = "assignedTo")
     @Mapping(target = "center",      source = "center")
     @Mapping(target = "controlRoom", source = "controlRoom")
+    @Mapping(target = "possibleDuplicates", ignore = true)
     WorkOrderResponse toResponse(WorkOrder wo);
 
     @Mapping(target = "id",       source = "id")

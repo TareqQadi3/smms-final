@@ -24,9 +24,14 @@ type ActionType =
   | 'warehouse'
   | 'approval'
   | 'close'
-  | 'reopen';
+  | 'reopen'
+  | 'requestInfo'
+  | 'provideInfo';
 
 interface Technician { id: string; fullName: string; }
+
+// currentStage is returned by the API but is not part of the shared WorkOrder type
+type WorkOrderWithStage = WorkOrder & { currentStage?: string };
 
 export default function WorkOrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,7 +40,7 @@ export default function WorkOrderDetailPage() {
   const router = useRouter();
   const isAr = lang === 'ar';
 
-  const [wo, setWo] = useState<WorkOrder | null>(null);
+  const [wo, setWo] = useState<WorkOrderWithStage | null>(null);
   const [history, setHistory] = useState<TicketHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -112,6 +117,14 @@ export default function WorkOrderDetailPage() {
           if (!note) throw new Error(isAr ? 'يجب إضافة سبب' : 'Note is required');
           await workOrderApi.reopen(wo.id, note);
           break;
+        case 'requestInfo':
+          if (!note.trim()) throw new Error(isAr ? 'اكتب المعلومات المطلوبة' : 'Describe the information needed');
+          await workOrderApi.requestInfo(wo.id, note.trim());
+          break;
+        case 'provideInfo':
+          if (!note.trim()) throw new Error(isAr ? 'اكتب المعلومات' : 'Enter the information');
+          await workOrderApi.provideInfo(wo.id, note.trim());
+          break;
       }
       closeDialog();
       setLoading(true);
@@ -142,33 +155,53 @@ export default function WorkOrderDetailPage() {
     if (!wo || !user) return [];
     const role = user.role;
     const status = wo.status;
+    // Mirrors WorkflowEngine (backend is authoritative). assigned is reached only through
+    // /assign, so it is never offered here; approval, warehouse, reopen and close have their own
+    // buttons or dialogs. DEF-007: technician waiting_materials->in_progress and
+    // maintenance_manager in_progress->completed are NOT engine moves and were removed.
     const map: Record<string, Record<string, string[]>> = {
       control_room: {
-        new:       ['under_review', 'cancelled'],
-        completed: ['closed'],
-      },
-      technician: {
-        assigned:          ['in_progress'],
-        in_progress:       ['waiting_materials', 'completed'],
-        waiting_materials: ['in_progress'],
-      },
-      maintenance_manager: {
-        in_progress: ['completed'],
+        new:         ['under_review', 'cancelled'],
+        under_review: ['cancelled'],
+        assigned:    ['cancelled'],
+        in_progress: ['cancelled'],
         completed:   ['closed'],
       },
-      system_admin: {
-        new: ['under_review', 'cancelled'],
+      technician: {
+        assigned:    ['in_progress'],
+        in_progress: ['waiting_materials', 'completed'],
+      },
+      maintenance_manager: {
+        new:         ['cancelled'],
         under_review: ['cancelled'],
-        in_progress: ['completed', 'cancelled'],
-        completed: ['closed'],
-        waiting_materials: ['in_progress'],
-        waiting_approval: ['in_progress'],
+        assigned:    ['cancelled'],
+        in_progress: ['cancelled'],
+        completed:   ['closed'],
+      },
+      hospital_supervisor: {
+        new: ['cancelled'],
+      },
+      system_admin: {
+        new:               ['under_review', 'cancelled'],
+        under_review:      ['cancelled'],
+        assigned:          ['in_progress', 'cancelled'],
+        in_progress:       ['completed', 'waiting_materials', 'cancelled'],
+        waiting_materials: ['waiting_approval', 'in_progress'],
+        waiting_approval:  ['in_progress', 'waiting_materials'],
+        completed:         ['closed'],
       },
     };
     return map[role]?.[status] || [];
   };
 
-  const canAssign     = wo && user?.role === 'control_room'               && wo.status === 'under_review';
+  const infoPending   = wo?.currentStage === 'info_requested';
+  // Same roles as the backend @PreAuthorize on /assign; blocked while information is pending
+  const canAssign     = wo && ['control_room', 'maintenance_manager', 'system_admin'].includes(user?.role || '')
+                        && wo.status === 'under_review' && !infoPending;
+  const canRequestInfo = wo && ['control_room', 'maintenance_manager'].includes(user?.role || '')
+                        && wo.status === 'under_review' && !infoPending;
+  const canProvideInfo = wo && infoPending && wo.status === 'under_review'
+                        && !!user?.id && wo.requestedBy?.id === user.id;
   const canWarehouse  = wo && user?.role === 'warehouse'                   && wo.status === 'waiting_materials';
   const canApproval   = wo && user?.role === 'operating_company_manager'  && wo.status === 'waiting_approval';
   const canReopen     = wo && ['control_room', 'system_admin'].includes(user?.role || '') && wo.status === 'completed';
@@ -212,6 +245,11 @@ export default function WorkOrderDetailPage() {
             <span className={`px-2 py-1 rounded text-sm font-medium border ${priorityColors[wo.priority] || ''}`}>
               {tPriority(wo.priority, lang)}
             </span>
+            {infoPending && (
+              <span className="px-2 py-1 rounded text-sm font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                {isAr ? 'بانتظار معلومات من مقدم البلاغ' : 'Awaiting requester information'}
+              </span>
+            )}
             {wo.slaBreached && (
               <span className="px-2 py-1 rounded text-sm font-medium bg-red-100 text-red-700 border border-red-300">
                 ⚠ SLA
@@ -366,7 +404,7 @@ export default function WorkOrderDetailPage() {
             </Card>
 
             {/* Actions */}
-            {(transitions.length > 0 || canAssign || canWarehouse || canApproval || canReopen) && (
+            {(transitions.length > 0 || canAssign || canRequestInfo || canProvideInfo || canWarehouse || canApproval || canReopen) && (
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">{isAr ? 'الإجراءات المتاحة' : 'Available Actions'}</CardTitle>
@@ -382,6 +420,29 @@ export default function WorkOrderDetailPage() {
                     >
                       <UserCheck size={15} />
                       {tr.assignTechnician}
+                    </Button>
+                  )}
+
+                  {/* Return for information */}
+                  {canRequestInfo && (
+                    <Button
+                      className="w-full gap-2 justify-start"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openAction('requestInfo')}
+                    >
+                      <RotateCcw size={15} />
+                      {isAr ? 'طلب معلومات إضافية' : 'Request Information'}
+                    </Button>
+                  )}
+                  {canProvideInfo && (
+                    <Button
+                      className="w-full gap-2 justify-start"
+                      size="sm"
+                      onClick={() => openAction('provideInfo')}
+                    >
+                      <CheckCircle size={15} />
+                      {isAr ? 'تقديم المعلومات المطلوبة' : 'Provide Information'}
                     </Button>
                   )}
 
@@ -483,6 +544,8 @@ export default function WorkOrderDetailPage() {
               {action === 'approval'  && (isAr ? 'قرار الموافقة' : 'Approval Decision')}
               {action === 'close'     && (isAr ? 'إغلاق البلاغ' : 'Close Ticket')}
               {action === 'reopen'    && (isAr ? 'إعادة فتح البلاغ' : 'Reopen Ticket')}
+              {action === 'requestInfo' && (isAr ? 'طلب معلومات إضافية' : 'Request Information')}
+              {action === 'provideInfo' && (isAr ? 'تقديم المعلومات' : 'Provide Information')}
               {action === 'transition' && (isAr ? `تحويل إلى: ${statusLabel[targetStatus] || targetStatus}` : `Transition to: ${statusLabel[targetStatus] || targetStatus}`)}
             </DialogTitle>
           </DialogHeader>
@@ -587,6 +650,24 @@ export default function WorkOrderDetailPage() {
                   onChange={e => setNote(e.target.value)}
                   className={inputClass}
                   placeholder={isAr ? 'ملاحظات اختيارية' : 'Optional notes'}
+                />
+              </div>
+            )}
+
+            {/* Return for information: note is required */}
+            {(action === 'requestInfo' || action === 'provideInfo') && (
+              <div className="space-y-1.5">
+                <Label>{tr.notes} *</Label>
+                <textarea
+                  rows={3}
+                  required
+                  maxLength={1000}
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  className={inputClass}
+                  placeholder={action === 'requestInfo'
+                    ? (isAr ? 'ما المعلومات المطلوبة من مقدم البلاغ؟' : 'What do you need from the requester?')
+                    : (isAr ? 'اكتب المعلومات المطلوبة...' : 'Write the requested information...')}
                 />
               </div>
             )}

@@ -43,6 +43,8 @@ export default function WorkOrdersPage() {
   const [controlRooms, setControlRooms] = useState<{id:string;name:string}[]>([]);
   const [form, setForm] = useState({ controlRoomId:'', subType:'', title:'', description:'', locationDetail:'', priority:'medium' as TicketPriority });
   const [submitting, setSubmitting] = useState(false);
+  // Non-blocking duplicate hint returned by the create call (only tickets the user may already see)
+  const [dupes, setDupes] = useState<{ id: string; ticketNumber: string }[]>([]);
 
   const canCreate = user && ['resident','department','control_room','system_admin'].includes(user.role);
 
@@ -74,7 +76,8 @@ export default function WorkOrdersPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await workOrderApi.create(form);
+      const res = await workOrderApi.create(form);
+      setDupes(Array.isArray(res.data?.possibleDuplicates) ? res.data.possibleDuplicates : []);
       setCreateOpen(false);
       setForm({ controlRoomId:'', subType:'', title:'', description:'', locationDetail:'', priority:'medium' });
       load();
@@ -110,6 +113,18 @@ export default function WorkOrdersPage() {
             </Button>
           )}
         </div>
+
+        {dupes.length > 0 && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-start justify-between gap-3">
+            <p>
+              {isAr ? 'تم إنشاء البلاغ. قد يتشابه مع بلاغات مفتوحة: ' : 'Ticket created. It may duplicate open tickets: '}
+              {dupes.map(d => d.ticketNumber).join(', ')}
+            </p>
+            <button type="button" onClick={() => setDupes([])} className="text-xs underline shrink-0">
+              {isAr ? 'إخفاء' : 'Dismiss'}
+            </button>
+          </div>
+        )}
 
         {/* Filters */}
         <Card className="border-0 shadow-sm">
