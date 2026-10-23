@@ -39,7 +39,7 @@ services:
   backend:
     build:
       context: ./backend-source
-      dockerfile: Dockerfile.prebuilt
+      dockerfile: Dockerfile
     container_name: smms_backend
     restart: unless-stopped
     env_file: .env
@@ -64,7 +64,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.prebuilt
+      dockerfile: Dockerfile
     container_name: smms_frontend
     restart: unless-stopped
     environment:
