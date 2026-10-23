@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
 import { useT, statusColors, priorityColors, tStatus, tPriority } from '@/lib/i18n';
-import { workOrderApi, userApi } from '@/lib/api';
+import { workOrderApi } from '@/lib/api';
 import { WorkOrder, TicketHistory } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -74,9 +74,9 @@ export default function WorkOrderDetailPage() {
     setMaterialsAvailable(null); setWarehouseNotes('');
     setApprovalDecision(null); setError('');
 
-    if (type === 'assign' && wo?.center?.id) {
-      const res = await userApi.getTechnicians(wo.center.id).catch(() => null);
-      setTechnicians(res?.data?.content || res?.data || []);
+    if (type === 'assign' && wo?.id) {
+      const res = await workOrderApi.getAssignableTechnicians(wo.id).catch(() => null);
+      setTechnicians(Array.isArray(res?.data) ? res.data : []);
     }
   };
 

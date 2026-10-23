@@ -58,6 +58,9 @@ export const workOrderApi = {
   reopen:     (id: string, note: string) =>
     api.post(`/work-orders/${id}/reopen`, null, { params: { note } }),
   getHistory: (id: string) => api.get(`/work-orders/${id}/history`),
+  // Technician picker: active technicians of the ticket's center (does not need the user list)
+  getAssignableTechnicians: (id: string) =>
+    api.get(`/work-orders/${id}/assignable-technicians`),
   getAttachments: (id: string) => api.get(`/work-orders/${id}/attachments`),
 };
 
@@ -68,8 +71,6 @@ export const userApi = {
   update:         (id: string, data: unknown) => api.put(`/admin/users/${id}`, data),
   toggleActive:   (id: string, active: boolean) =>
     api.put(`/admin/users/${id}/active`, null, { params: { active } }),
-  getTechnicians: (centerId?: string) =>
-    api.get('/admin/users', { params: { role: 'technician', ...(centerId ? { centerId } : {}) } }),
   grantControlRoom: (userId: string, controlRoomId: string) =>
     api.post(`/admin/users/${userId}/control-rooms`, null, { params: { controlRoomId } }),
   resetPassword: (id: string, newPassword: string) =>

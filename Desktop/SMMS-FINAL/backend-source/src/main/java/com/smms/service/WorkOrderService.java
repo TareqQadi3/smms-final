@@ -3,6 +3,7 @@ package com.smms.service;
 import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.util.InputSanitizer;
 import com.smms.dto.request.TransitionRequest;
+import com.smms.dto.response.AssignableTechnicianResponse;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.*;
@@ -41,6 +42,7 @@ public class WorkOrderService {
     private final TenantSecurityService tenantSecurity;
     private final WorkOrderAccessPolicy accessPolicy;
     private final EntityManager entityManager;
+    private final UserRepository userRepo;
 
     // ── Create ────────────────────────────────────────────
 
@@ -156,6 +158,24 @@ public class WorkOrderService {
         recordHistory(wo, prev, TicketStatus.ASSIGNED, actor, note);
         notificationService.notifyUser(tech, wo, "ASSIGNED", "Ticket assigned to you");
         return mapper.toResponse(wo);
+    }
+
+    /**
+     * Technicians the actor may pick for this ticket: active technicians of the ticket's own center
+     * and tenant. Visibility of the ticket itself is decided by WorkOrderAccessPolicy (404 otherwise),
+     * so this does not need access to the general user list.
+     */
+    @Transactional(readOnly = true)
+    public List<AssignableTechnicianResponse> assignableTechnicians(UUID id, User actor) {
+        WorkOrder wo = getActiveWorkOrder(id, actor);
+        if (wo.getCenter() == null) return List.of();
+        return userRepo.findAllByCenterIdAndRoleAndDeletedAtIsNull(wo.getCenter().getId(), UserRole.technician)
+            .stream()
+            .filter(User::isActive)
+            .filter(t -> java.util.Objects.equals(t.getTenantId(), wo.getTenantId()))
+            .map(t -> AssignableTechnicianResponse.builder()
+                .id(t.getId()).fullName(t.getFullName()).fullNameAr(t.getFullNameAr()).build())
+            .toList();
     }
 
     // ── Warehouse decision ────────────────────────────────

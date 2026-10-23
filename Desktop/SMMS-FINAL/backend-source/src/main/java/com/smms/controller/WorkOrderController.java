@@ -2,6 +2,7 @@ package com.smms.controller;
 
 import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.dto.request.TransitionRequest;
+import com.smms.dto.response.AssignableTechnicianResponse;
 import com.smms.dto.response.AttachmentResponse;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
@@ -87,6 +88,14 @@ public class WorkOrderController {
                                                     @RequestParam(required = false) String note,
                                                     @CurrentUser User actor) {
         return ResponseEntity.ok(workOrderService.assign(id, technicianId, note, actor));
+    }
+
+    /** Technician picker for the assign dialog; same roles as assign, scoped to the ticket's center. */
+    @GetMapping("/{id}/assignable-technicians")
+    @PreAuthorize("hasAnyRole('control_room','maintenance_manager','system_admin')")
+    public ResponseEntity<List<AssignableTechnicianResponse>> assignableTechnicians(
+            @PathVariable UUID id, @CurrentUser User actor) {
+        return ResponseEntity.ok(workOrderService.assignableTechnicians(id, actor));
     }
 
     @PostMapping("/{id}/warehouse")

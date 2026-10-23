@@ -45,6 +45,7 @@ class WorkOrderServiceTest {
     private WorkOrderAccessPolicy accessPolicy;
     private TicketHistoryRepository historyRepo;
     private NotificationService notificationService;
+    private UserRepository userRepo;
     private WorkOrderService service;
 
     @BeforeEach
@@ -57,9 +58,10 @@ class WorkOrderServiceTest {
         accessPolicy = mock(WorkOrderAccessPolicy.class);
         historyRepo = mock(TicketHistoryRepository.class);
         notificationService = mock(NotificationService.class);
+        userRepo = mock(UserRepository.class);
         service = new WorkOrderService(workOrderRepo, historyRepo, workflowEngine,
             notificationService, mapper, mock(PlanEnforcementService.class),
-            tenantSecurity, accessPolicy, em);
+            tenantSecurity, accessPolicy, em, userRepo);
     }
 
     @AfterEach
@@ -373,5 +375,60 @@ class WorkOrderServiceTest {
         service.reopen(id, "again", cro);
         assertThat(w3.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         assertThat(w3.getReopenedCount()).isEqualTo(1);
+    }
+
+    // ── assignable technicians (technician picker) ──────────
+
+    private static User technician(Center center, UUID tenant, boolean active, String name) {
+        User t = user(UserRole.technician);
+        t.setCenter(center);
+        t.setTenantId(tenant);
+        t.setActive(active);
+        t.setFullName(name);
+        return t;
+    }
+
+    @Test
+    void assignableTechniciansOutOfScopeTicketIsNotFound() {
+        UUID id = UUID.randomUUID();
+        User actor = user(UserRole.maintenance_manager);
+        when(accessPolicy.requireReadable(id, actor)).thenThrow(new ResourceNotFoundException("WorkOrder not found: " + id));
+
+        assertThatThrownBy(() -> service.assignableTechnicians(id, actor)).isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(userRepo);
+    }
+
+    @Test
+    void assignableTechniciansAreActiveSameCenterSameTenantOnlyWithMinimalFields() {
+        UUID tenant = UUID.randomUUID();
+        Center center = new Center();
+        center.setId(UUID.randomUUID());
+        WorkOrder wo = new WorkOrder();
+        wo.setId(UUID.randomUUID());
+        wo.setCenter(center);
+        wo.setTenantId(tenant);
+        User actor = user(UserRole.maintenance_manager);
+        when(accessPolicy.requireReadable(wo.getId(), actor)).thenReturn(wo);
+        User ok = technician(center, tenant, true, "Ok Tech");
+        User inactive = technician(center, tenant, false, "Inactive");
+        User otherTenant = technician(center, UUID.randomUUID(), true, "Other Tenant");
+        when(userRepo.findAllByCenterIdAndRoleAndDeletedAtIsNull(center.getId(), UserRole.technician))
+            .thenReturn(java.util.List.of(ok, inactive, otherTenant));
+
+        var out = service.assignableTechnicians(wo.getId(), actor);
+
+        assertThat(out).hasSize(1);
+        assertThat(out.get(0).getId()).isEqualTo(ok.getId());
+        assertThat(out.get(0).getFullName()).isEqualTo("Ok Tech");
+        verify(userRepo, never()).findAll();
+    }
+
+    @Test
+    void assignableTechniciansOfTicketWithoutCenterIsEmpty() {
+        WorkOrder wo = new WorkOrder();
+        wo.setId(UUID.randomUUID());
+        User actor = user(UserRole.control_room);
+        when(accessPolicy.requireReadable(wo.getId(), actor)).thenReturn(wo);
+        assertThat(service.assignableTechnicians(wo.getId(), actor)).isEmpty();
     }
 }
