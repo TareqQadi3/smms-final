@@ -1,0 +1,8 @@
+# Historical findings: test secrets that were committed earlier. They are rotated
+# (setup.sh replaces the known JWT value; see docs/ for the rotation steps). Fingerprints only.
+cdae5832c68bbfaadd6d825c9c2eaec6d3b50a27:Desktop/SMMS-FINAL/.env.codespaces:generic-api-key:24
+8e279e8eb95fd7f5efa9705dabdde91b7f2cbe41:Desktop/SMMS-FINAL/.env.example:generic-api-key:21
+1033405f18938a8ad067f958a1656de38c463d06:Desktop/SMMS-FINAL/.env:generic-api-key:19
+1033405f18938a8ad067f958a1656de38c463d06:Desktop/SMMS-FINAL/backend-source/target/classes/application-dev.yml:generic-api-key:56
+1033405f18938a8ad067f958a1656de38c463d06:Desktop/SMMS-FINAL/backend-source/src/main/resources/application-dev.yml:generic-api-key:56
+1033405f18938a8ad067f958a1656de38c463d06:Desktop/SMMS-FINAL/enterprise-workspace/backend-source/src/main/resources/application-dev.yml:generic-api-key:54

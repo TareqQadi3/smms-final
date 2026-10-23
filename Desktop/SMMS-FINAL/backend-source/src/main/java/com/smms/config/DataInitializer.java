@@ -18,9 +18,6 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.Statement;
 import java.util.List;
 
 @Slf4j
@@ -30,29 +27,19 @@ public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepo;
     private final PasswordEncoder passwordEncoder;
-    private final DataSource dataSource;
     private final MaintenanceTypeRepository maintenanceTypeRepo;
     private final TenantRepository tenantRepo;
     private final TenantSubscriptionRepository subscriptionRepo;
 
     @Override
     public void run(String... args) {
-        migrateEnums();
+        // Schema and tenant data migrations live in Flyway (db/migration). This class only inserts
+        // missing seed rows and never rewrites existing data; tenant-less rows are reported by
+        // TenantIntegrityReporter and fixed by an admin (POST /api/admin/users/{id}/tenant).
         Tenant defaultTenant = ensureDefaultTenant();
-        backfillTenantId(defaultTenant.getId());
         ensureDefaultSubscription(defaultTenant);
         createAdminIfAbsent();
         seedMaintenanceTypes(defaultTenant);
-    }
-
-    private void migrateEnums() {
-        try (Connection conn = dataSource.getConnection();
-             Statement stmt = conn.createStatement()) {
-            stmt.execute("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'other'");
-            log.debug("user_role enum migration OK");
-        } catch (Exception e) {
-            log.warn("user_role enum migration skipped: {}", e.getMessage());
-        }
     }
 
     /** Creates the default tenant if not present; returns it. */
@@ -68,101 +55,6 @@ public class DataInitializer implements CommandLineRunner {
                 log.info("Default tenant created: id={}", t.getId());
                 return t;
             });
-    }
-
-    /**
-     * Fills tenant_id on rows that have none. The tenant is derived from the row's parent
-     * (region -> center -> control room / user / work order), never blindly from the default tenant,
-     * so rows of a second tenant keep their own tenant. Rows that still have no tenant afterwards
-     * fall back to the default tenant only when exactly one tenant exists; otherwise they are
-     * logged and left NULL (such accounts cannot sign in until an admin assigns a tenant).
-     * Idempotent: only rows with a NULL tenant_id are touched, system_admin always stays NULL.
-     */
-    private void backfillTenantId(java.util.UUID defaultTenantId) {
-        boolean singleTenant = tenantRepo.count() == 1;
-        // user role cast: the column is a PostgreSQL enum
-        String notAdmin = "role::text != 'system_admin'";
-        try (Connection conn = dataSource.getConnection();
-             Statement stmt = conn.createStatement()) {
-            int total = 0;
-
-            // 1. Regions are the roots: nothing to derive from, so only the single-tenant fallback applies
-            if (singleTenant) total += update(stmt, "regions fallback",
-                "UPDATE regions SET tenant_id = '" + defaultTenantId + "' WHERE tenant_id IS NULL");
-
-            // 2. Derive downwards from the parent
-            total += update(stmt, "centers from regions",
-                "UPDATE centers c SET tenant_id = r.tenant_id FROM regions r "
-                + "WHERE c.region_id = r.id AND c.tenant_id IS NULL AND r.tenant_id IS NOT NULL");
-            total += update(stmt, "control_rooms from centers",
-                "UPDATE control_rooms x SET tenant_id = c.tenant_id FROM centers c "
-                + "WHERE x.center_id = c.id AND x.tenant_id IS NULL AND c.tenant_id IS NOT NULL");
-            total += update(stmt, "users from centers",
-                "UPDATE users u SET tenant_id = c.tenant_id FROM centers c "
-                + "WHERE u.center_id = c.id AND u.tenant_id IS NULL AND u." + notAdmin
-                + " AND c.tenant_id IS NOT NULL");
-            total += update(stmt, "users from regions",
-                "UPDATE users u SET tenant_id = r.tenant_id FROM regions r "
-                + "WHERE u.region_id = r.id AND u.tenant_id IS NULL AND u." + notAdmin
-                + " AND r.tenant_id IS NOT NULL");
-            total += update(stmt, "work_orders from centers",
-                "UPDATE work_orders w SET tenant_id = c.tenant_id FROM centers c "
-                + "WHERE w.center_id = c.id AND w.tenant_id IS NULL AND c.tenant_id IS NOT NULL");
-
-            // 3. Leftovers: default tenant only when it is the only tenant, else report and leave NULL
-            String[] derived = {"users", "centers", "control_rooms", "work_orders"};
-            for (String table : derived) {
-                String where = table.equals("users")
-                    ? "WHERE tenant_id IS NULL AND " + notAdmin : "WHERE tenant_id IS NULL";
-                if (singleTenant) {
-                    total += update(stmt, table + " fallback",
-                        "UPDATE " + table + " SET tenant_id = '" + defaultTenantId + "' " + where);
-                } else {
-                    long left = count(stmt, "SELECT count(*) FROM " + table + " " + where);
-                    if (left > 0) {
-                        log.warn("Tenant backfill: {} rows in '{}' have no tenant and cannot be derived;"
-                            + " left NULL, assign a tenant manually", left, table);
-                    }
-                }
-            }
-
-            // 4. Tables not covered by this change keep the previous single default-tenant backfill
-            String[] others = {
-                "maintenance_types", "ticket_history", "notifications", "attachments",
-                "departments", "assets", "inventory_items", "inventory_movements"
-            };
-            for (String table : others) {
-                total += update(stmt, table + " default",
-                    "UPDATE " + table + " SET tenant_id = '" + defaultTenantId + "' WHERE tenant_id IS NULL");
-            }
-
-            // Ensure existing system_admin users always have null tenantId
-            update(stmt, "system_admin clear",
-                "UPDATE users SET tenant_id = NULL WHERE role::text = 'system_admin' AND tenant_id IS NOT NULL");
-            if (total > 0) log.info("Backfilled tenant_id for {} rows", total);
-        } catch (Exception e) {
-            log.warn("Tenant backfill failed: {}", e.getMessage());
-        }
-    }
-
-    private int update(Statement stmt, String label, String sql) {
-        try {
-            int rows = stmt.executeUpdate(sql);
-            if (rows > 0) log.info("Tenant backfill [{}]: {} rows", label, rows);
-            return rows;
-        } catch (Exception e) {
-            log.debug("Backfill skip {}: {}", label, e.getMessage());
-            return 0;
-        }
-    }
-
-    private long count(Statement stmt, String sql) {
-        try (java.sql.ResultSet rs = stmt.executeQuery(sql)) {
-            return rs.next() ? rs.getLong(1) : 0;
-        } catch (Exception e) {
-            log.debug("Count skip: {}", e.getMessage());
-            return 0;
-        }
     }
 
     private void ensureDefaultSubscription(Tenant tenant) {
