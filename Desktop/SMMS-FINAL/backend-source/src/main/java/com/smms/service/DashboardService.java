@@ -1,73 +1,66 @@
 package com.smms.service;
 
 import com.smms.entity.User;
-import com.smms.enums.*;
-import com.smms.repository.*;
-import com.smms.util.TenantContext;
-import jakarta.persistence.criteria.Predicate;
-import lombok.*;
+import com.smms.entity.WorkOrder;
+import com.smms.enums.TicketStatus;
+import com.smms.repository.WorkOrderRepository;
+import com.smms.security.WorkOrderAccessPolicy;
+import com.smms.security.WorkOrderScope;
+import lombok.RequiredArgsConstructor;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
 
+/** Dashboard counters. Every count is computed inside the actor's work-order scope. */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class DashboardService {
 
     private final WorkOrderRepository workOrderRepo;
-    private final UserControlRoomAccessRepository accessRepo;
-
-    private static final List<TicketStatus> TERMINAL = List.of(
-        TicketStatus.COMPLETED, TicketStatus.CLOSED, TicketStatus.CANCELLED);
+    private final WorkOrderAccessPolicy accessPolicy;
 
     public Map<String, Object> controlRoomStats(User actor) {
-        List<UUID> crIds = accessRepo.findByUserId(actor.getId())
-            .stream().map(a -> a.getControlRoom().getId()).toList();
-
-        Map<String, Object> stats = new LinkedHashMap<>();
-        for (TicketStatus s : TicketStatus.values()) {
-            UUID crId = crIds.isEmpty() ? null : crIds.get(0);
-            long count = countBySpec(null, crId, s, null, null);
-            stats.put(s.getDbValue(), count);
-        }
-        return stats;
+        // The scope already covers all of the operator's control rooms in their center
+        return statsByStatus(accessPolicy.resolveScope(actor), null);
     }
 
     public Map<String, Object> technicianStats(User actor) {
+        // Technician scope is "assigned to me", so no extra assignee filter is needed
+        WorkOrderScope scope = accessPolicy.resolveScope(actor);
+        Specification<WorkOrder> base = accessPolicy.specFor(scope);
         Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("assigned",          countBySpec(null, null, TicketStatus.ASSIGNED,          null, actor.getId()));
-        stats.put("in_progress",       countBySpec(null, null, TicketStatus.IN_PROGRESS,       null, actor.getId()));
-        stats.put("waiting_materials", countBySpec(null, null, TicketStatus.WAITING_MATERIALS, null, actor.getId()));
-        stats.put("completed",         countBySpec(null, null, TicketStatus.COMPLETED,         null, actor.getId()));
+        stats.put("assigned",          count(scope, base, TicketStatus.ASSIGNED, null));
+        stats.put("in_progress",       count(scope, base, TicketStatus.IN_PROGRESS, null));
+        stats.put("waiting_materials", count(scope, base, TicketStatus.WAITING_MATERIALS, null));
+        stats.put("completed",         count(scope, base, TicketStatus.COMPLETED, null));
         return stats;
     }
 
     public Map<String, Object> managementStats(User actor, UUID centerId) {
+        // centerId is a caller filter: it can only narrow the actor's scope
+        return statsByStatus(accessPolicy.resolveScope(actor), centerId);
+    }
+
+    private Map<String, Object> statsByStatus(WorkOrderScope scope, UUID centerId) {
+        Specification<WorkOrder> base = accessPolicy.specFor(scope);
         Map<String, Object> stats = new LinkedHashMap<>();
         for (TicketStatus s : TicketStatus.values()) {
-            stats.put(s.getDbValue(), countBySpec(centerId, null, s, null, null));
+            stats.put(s.getDbValue(), count(scope, base, s, centerId));
         }
         return stats;
     }
 
-    private long countBySpec(UUID centerId, UUID controlRoomId,
-                              TicketStatus status, TicketPriority priority,
-                              UUID assignedToId) {
-        UUID tenantId = TenantContext.get();
-        Specification<com.smms.entity.WorkOrder> spec = (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isNull(root.get("deletedAt")));
-            if (tenantId != null) predicates.add(cb.equal(root.get("tenantId"), tenantId));
-            if (centerId      != null) predicates.add(cb.equal(root.get("center").get("id"),      centerId));
-            if (controlRoomId != null) predicates.add(cb.equal(root.get("controlRoom").get("id"), controlRoomId));
-            if (status        != null) predicates.add(cb.equal(root.get("status"),                status));
-            if (priority      != null) predicates.add(cb.equal(root.get("priority"),              priority));
-            if (assignedToId  != null) predicates.add(cb.equal(root.get("assignedTo").get("id"),  assignedToId));
-            return cb.and(predicates.toArray(new Predicate[0]));
-        };
-        return workOrderRepo.count(spec);
+    private long count(WorkOrderScope scope, Specification<WorkOrder> base, TicketStatus status, UUID centerId) {
+        // No visibility: zero without querying
+        if (scope.isNone()) return 0L;
+        Specification<WorkOrder> filters = (root, query, cb) -> centerId == null
+            ? cb.equal(root.get("status"), status)
+            : cb.and(cb.equal(root.get("status"), status), cb.equal(root.get("center").get("id"), centerId));
+        return workOrderRepo.count(base.and(filters));
     }
 }

@@ -2,6 +2,7 @@ package com.smms.controller;
 
 import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.dto.request.TransitionRequest;
+import com.smms.dto.response.AttachmentResponse;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.User;
@@ -141,7 +142,7 @@ public class WorkOrderController {
     }
 
     @GetMapping("/{id}/attachments")
-    public ResponseEntity<List<?>> attachments(@PathVariable UUID id,
+    public ResponseEntity<List<AttachmentResponse>> attachments(@PathVariable UUID id,
                                                @CurrentUser User actor) {
         return ResponseEntity.ok(attachmentService.list(id, actor));
     }

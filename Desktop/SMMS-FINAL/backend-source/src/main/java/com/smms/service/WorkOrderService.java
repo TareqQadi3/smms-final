@@ -2,7 +2,6 @@ package com.smms.service;
 
 import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.util.InputSanitizer;
-import com.smms.util.TenantContext;
 import com.smms.dto.request.TransitionRequest;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
@@ -12,6 +11,8 @@ import com.smms.exception.*;
 import com.smms.mapper.WorkOrderMapper;
 import com.smms.repository.*;
 import com.smms.security.TenantSecurityService;
+import com.smms.security.WorkOrderAccessPolicy;
+import com.smms.security.WorkOrderScope;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -33,12 +34,12 @@ public class WorkOrderService {
 
     private final WorkOrderRepository workOrderRepo;
     private final TicketHistoryRepository historyRepo;
-    private final com.smms.repository.UserControlRoomAccessRepository crAccessRepo;
     private final WorkflowEngine workflowEngine;
     private final NotificationService notificationService;
     private final WorkOrderMapper mapper;
     private final PlanEnforcementService planEnforcement;
     private final TenantSecurityService tenantSecurity;
+    private final WorkOrderAccessPolicy accessPolicy;
     private final EntityManager entityManager;
 
     // ── Create ────────────────────────────────────────────
@@ -48,22 +49,8 @@ public class WorkOrderService {
 
         ControlRoom cr = tenantSecurity.requireControlRoom(req.getControlRoomId());
 
-        // ISSUE 2 FIX: for end-user roles, validate they have explicit CR access
-        boolean isManagerRole = actor.getRole() == UserRole.system_admin
-            || actor.getRole() == UserRole.maintenance_manager
-            || actor.getRole() == UserRole.hospital_supervisor
-            || actor.getRole() == UserRole.region_supervisor
-            || actor.getRole() == UserRole.electrical_manager
-            || actor.getRole() == UserRole.control_room;
-
-        if (!isManagerRole) {
-            boolean hasAccess = crAccessRepo.existsByUserIdAndControlRoomId(
-                actor.getId(), cr.getId());
-            if (!hasAccess) {
-                throw new AccessDeniedException(
-                    "You do not have access to this control room");
-            }
-        }
+        // Role/center/control-room scope check (shared policy, 403 when out of scope)
+        accessPolicy.assertCanCreateIn(cr, actor);
 
         validateSubmitterRole(actor.getRole(), cr.getType());
 
@@ -81,7 +68,8 @@ public class WorkOrderService {
             .currentStage("new")
             .build();
 
-        wo.setTenantId(TenantContext.get());
+        // The control room is already tenant-checked; inherit its tenant (also correct for platform-admin callers)
+        wo.setTenantId(cr.getTenantId());
         WorkOrder saved = workOrderRepo.save(wo);
         // ticket_number and sla_deadline are filled by DB triggers on INSERT; flush the insert and
         // reload the row so the response carries those values instead of nulls.
@@ -153,6 +141,11 @@ public class WorkOrderService {
             throw new WorkflowException("Can only assign from under_review status");
         }
         User tech = tenantSecurity.requireUser(technicianId, UserRole.technician);
+        // A technician can only be assigned inside the ticket's own center; otherwise behave as unknown
+        if (tech.getCenter() == null || wo.getCenter() == null
+                || !tech.getCenter().getId().equals(wo.getCenter().getId())) {
+            throw new ResourceNotFoundException("User not found");
+        }
 
         TicketStatus prev = wo.getStatus();
         wo.setAssignedTo(tech);
@@ -266,8 +259,7 @@ public class WorkOrderService {
 
     public void lock(UUID id, User actor) {
         assertCanLock(actor);
-        // getActiveWorkOrder = tenant scoping + TenantSecurityService.assertWorkOrderAccess
-        // (technicians only on their own assigned tickets)
+        // getActiveWorkOrder = WorkOrderAccessPolicy.requireReadable (tenant + role scope, 404 otherwise)
         WorkOrder wo = getActiveWorkOrder(id, actor);
         if (wo.isLocked()) throw new TicketLockedException("Already locked");
         wo.setLocked(true);
@@ -304,13 +296,14 @@ public class WorkOrderService {
                                            TicketStatus status, TicketPriority priority,
                                            UUID assignedToId, int page, int size,
                                            User actor) {
-        UUID tenantId = TenantContext.get();
+        WorkOrderScope scope = accessPolicy.resolveScope(actor);
+        // No visibility at all: empty page without touching the database
+        if (scope.isNone()) return Page.empty(PageRequest.of(page, size));
+
         UUID effectiveAssignedTo = tenantSecurity.resolveAssignedToFilter(actor, assignedToId);
-        Specification<WorkOrder> spec = (root, query, cb) -> {
+        // Caller filters are ANDed after the scope predicate, so they can only narrow the result
+        Specification<WorkOrder> filters = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isNull(root.get("deletedAt")));
-            // Tenant isolation — platform admin (null) sees all
-            if (tenantId != null) predicates.add(cb.equal(root.get("tenantId"), tenantId));
             if (centerId     != null) predicates.add(cb.equal(root.get("center").get("id"),      centerId));
             if (controlRoomId!= null) predicates.add(cb.equal(root.get("controlRoom").get("id"), controlRoomId));
             if (status       != null) predicates.add(cb.equal(root.get("status"),                status));
@@ -321,6 +314,7 @@ public class WorkOrderService {
             query.orderBy(cb.desc(root.get("createdAt")));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
+        Specification<WorkOrder> spec = accessPolicy.specFor(scope).and(filters);
         return workOrderRepo.findAll(spec, PageRequest.of(page, size))
             .map(mapper::toResponse);
     }
@@ -349,9 +343,7 @@ public class WorkOrderService {
     // ── Helpers ───────────────────────────────────────────
 
     private WorkOrder getActiveWorkOrder(UUID id, User actor) {
-        WorkOrder wo = tenantSecurity.requireWorkOrder(id);
-        tenantSecurity.assertWorkOrderAccess(wo, actor);
-        return wo;
+        return accessPolicy.requireReadable(id, actor);
     }
 
     private void recordHistory(WorkOrder wo, TicketStatus from, TicketStatus to,
