@@ -11,6 +11,7 @@ import java.util.Base64;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for JWT generation and validation.
@@ -145,5 +146,79 @@ class JwtServiceTest {
             .compact();
         assertThat(jwtService.isAccessToken(legacy)).isFalse();
         assertThat(jwtService.isRefreshToken(legacy)).isTrue();
+    }
+
+    // ── Secret guard (SEC-011). Secrets are generated at runtime, never literal values. ──
+
+    private static String randomSecret(int bytes) {
+        byte[] b = new byte[bytes];
+        new java.security.SecureRandom().nextBytes(b);
+        return Base64.getEncoder().encodeToString(b);
+    }
+
+    private JwtService withSecret(String secret, String... profiles) {
+        JwtService svc = new JwtService();
+        ReflectionTestUtils.setField(svc, "secret", secret);
+        ReflectionTestUtils.setField(svc, "environment",
+            new org.springframework.mock.env.MockEnvironment() {{ setActiveProfiles(profiles); }});
+        return svc;
+    }
+
+    @Test
+    void strongRandomSecretIsAcceptedInProd() {
+        withSecret(randomSecret(48), "prod").validateSecret();
+    }
+
+    @Test
+    void shortSecretIsRefusedInProdAndOnlyWarnedInDev() {
+        String shortSecret = randomSecret(16);
+        assertThatThrownBy(() -> withSecret(shortSecret, "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("JWT_SECRET").hasMessageNotContaining(shortSecret);
+        withSecret(shortSecret, "dev").validateSecret();
+    }
+
+    @Test
+    void invalidBase64IsRefusedUnderEveryProfile() {
+        assertThatThrownBy(() -> withSecret("not base64 !!", "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("Base64");
+        assertThatThrownBy(() -> withSecret("not base64 !!", "dev").validateSecret())
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> withSecret(null, "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void placeholderTextIsRefusedAndItsHashIsListed() {
+        String placeholder = "__GENERATED_BY_SETUP__";
+        assertThat(JwtService.KNOWN_WEAK_SHA256).contains(JwtService.sha256Hex(placeholder));
+        assertThatThrownBy(() -> withSecret(placeholder, "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void knownFingerprintIsRefusedInProdWithoutEchoingTheValue() {
+        // A generated value stands in for a leaked one: its hash is registered as known-weak
+        String known = randomSecret(64);
+        JwtService svc = withSecret(known, "prod");
+        ReflectionTestUtils.setField(svc, "knownWeakHashes", java.util.Set.of(JwtService.sha256Hex(known)));
+        assertThatThrownBy(svc::validateSecret)
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("JWT_SECRET").hasMessageNotContaining(known);
+        // dev only warns
+        JwtService dev = withSecret(known, "dev");
+        ReflectionTestUtils.setField(dev, "knownWeakHashes", java.util.Set.of(JwtService.sha256Hex(known)));
+        dev.validateSecret();
+    }
+
+    @Test
+    void committedFingerprintsAreWellFormedHashes() {
+        assertThat(JwtService.KNOWN_WEAK_SHA256).hasSize(4).allMatch(h -> h.matches("[0-9a-f]{64}"));
+    }
+
+    @Test
+    void sha256HexMatchesTheReferenceVector() {
+        assertThat(JwtService.sha256Hex("abc"))
+            .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
 }

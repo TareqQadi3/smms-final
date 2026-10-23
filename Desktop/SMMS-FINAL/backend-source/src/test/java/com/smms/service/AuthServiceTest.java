@@ -120,4 +120,30 @@ class AuthServiceTest {
         assertThatThrownBy(() -> service.refresh("r")).isInstanceOf(AuthException.class);
         verify(jwtService, never()).generateToken(any());
     }
+
+    @Test
+    void tenantlessUserWithWrongPasswordGetsTheSameErrorAndCountsAsFailure() {
+        user.setTenantId(null);
+        when(encoder.matches("pw", "hash")).thenReturn(false);
+        assertThatThrownBy(() -> service.login(req)).isInstanceOf(AuthException.class)
+            .hasMessage("Invalid credentials");
+        verify(bruteForce).recordFailure("tech1");
+    }
+
+    @Test
+    void userCanLoginOnceATenantHasBeenAssigned() {
+        user.setTenantId(null);
+        when(encoder.matches("pw", "hash")).thenReturn(true);
+        assertThatThrownBy(() -> service.login(req)).isInstanceOf(AuthException.class);
+        user.setTenantId(java.util.UUID.randomUUID()); // admin assigned a tenant
+        when(jwtService.generateToken(user)).thenReturn("fresh");
+        assertThat(service.login(req).getToken()).isEqualTo("fresh");
+    }
+
+    @Test
+    void inactiveAccountIsRefusedBeforeAnyTokenIsIssued() {
+        user.setActive(false);
+        assertThatThrownBy(() -> service.login(req)).isInstanceOf(AuthException.class);
+        verify(jwtService, never()).generateToken(any());
+    }
 }

@@ -115,4 +115,21 @@ class JwtAuthFilterTest {
         user.setTenantId(null);
         assertThat(authenticatedWith(token)).isFalse();
     }
+
+    @Test
+    void malformedOrTamperedTokenContinuesUnauthenticatedWithoutError() throws Exception {
+        assertThat(authenticatedWith("not.a.jwt")).isFalse();
+        String t = jwtService.generateToken(user);
+        assertThat(authenticatedWith(t.substring(0, t.length() - 3) + "abc")).isFalse();
+    }
+
+    @Test
+    void tokenSignedWithAnotherKeyIsNotAuthenticated() throws Exception {
+        JwtService other = new JwtService();
+        byte[] k = new byte[48];
+        new java.security.SecureRandom().nextBytes(k);
+        ReflectionTestUtils.setField(other, "secret", Base64.getEncoder().encodeToString(k));
+        ReflectionTestUtils.setField(other, "expiryHours", 8L);
+        assertThat(authenticatedWith(other.generateToken(user))).isFalse();
+    }
 }

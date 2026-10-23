@@ -47,7 +47,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             chain.doFilter(req, res); return;
         }
         String token    = header.substring(7);
-        String username = jwtService.extractUsername(token);
+        String username;
+        try {
+            username = jwtService.extractUsername(token);
+        } catch (io.jsonwebtoken.JwtException | IllegalArgumentException e) {
+            // malformed, tampered or expired token: continue unauthenticated (entry point answers 401)
+            chain.doFilter(req, res); return;
+        }
 
         try {
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
