@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { CheckCircle, Plus } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
+import { StateMessage } from '@/components/ui/state-message';
 
 type CR = { id: string; name: string; nameAr?: string };
 type MT = { id: string; name: string; nameAr: string; controlRoomType: string };
@@ -40,6 +41,7 @@ export default function NewRequestPage() {
   const [maintTypes,   setMaintTypes]   = useState<MT[]>([]);
   const [crLoading,    setCrLoading]    = useState(false);
   const [mtLoading,    setMtLoading]    = useState(false);
+  const [loadError,    setLoadError]    = useState(false);
 
   const [form, setForm] = useState({
     controlRoomId: '', subType: '', title: '',
@@ -53,6 +55,7 @@ export default function NewRequestPage() {
   useEffect(() => {
     const load = async () => {
       setCrLoading(true);
+      setLoadError(false);
       try {
         const [ordersRes, crRes] = await Promise.all([
           workOrderApi.getAll({ page: 0, size: 10 }),
@@ -60,7 +63,7 @@ export default function NewRequestPage() {
         ]);
         setMyOrders(ordersRes.data.content || []);
         setControlRooms(crRes.data || []);
-      } catch { /* silent */ }
+      } catch { setLoadError(true); }
       finally { setCrLoading(false); }
     };
     load();
@@ -239,21 +242,25 @@ export default function NewRequestPage() {
                 <CardTitle className="text-base">{isAr ? 'بلاغاتي' : 'My Requests'}</CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                {myOrders.length === 0 ? (
-                  <p className="text-center text-muted-foreground/70 py-8 text-sm">{tr.noData}</p>
+                {loadError ? (
+                  <StateMessage kind="error">
+                    {isAr ? 'تعذّر تحميل بلاغاتك وغرف التحكم. حدّث الصفحة وأعد المحاولة.' : 'Unable to load your requests and control rooms. Refresh the page and try again.'}
+                  </StateMessage>
+                ) : myOrders.length === 0 ? (
+                  <StateMessage>{isAr ? 'لم ترسل أي بلاغ بعد.' : 'You have not submitted any requests yet.'}</StateMessage>
                 ) : (
                   <div className="divide-y">
                     {myOrders.map(wo => (
                       <div key={wo.id} className="px-4 py-3">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-mono text-xs text-blue-600">{wo.ticketNumber}</span>
+                          <span className="font-mono text-xs text-blue-600 whitespace-nowrap tabular-nums"><bdi dir="ltr">{wo.ticketNumber}</bdi></span>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || ''}`}>
                             {tStatus(wo.status, lang)}
                           </span>
                         </div>
                         <p className="text-sm font-medium truncate">{wo.title}</p>
-                        <p className="text-xs text-muted-foreground/70 mt-0.5">
-                          {wo.createdAt ? format(new Date(wo.createdAt), 'dd/MM/yyyy') : ''}
+                        <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                          {formatDate(wo.createdAt, lang, false, '')}
                         </p>
                       </div>
                     ))}

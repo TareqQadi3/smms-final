@@ -65,7 +65,7 @@ export default function LoginPage() {
       <button
         type="button"
         onClick={() => setLang(isAr ? 'en' : 'ar')}
-        className="absolute top-4 right-4 flex items-center gap-1.5 text-white/70 hover:text-white text-sm bg-white/10 px-3 py-1.5 rounded-full transition outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+        className="absolute top-4 end-4 flex items-center gap-1.5 text-white/70 hover:text-white text-sm bg-white/10 px-3 py-1.5 min-h-10 rounded-full transition outline-none focus-visible:ring-2 focus-visible:ring-white/80"
       >
         <Globe size={14} />
         {isAr ? 'English' : 'عربي'}
@@ -94,13 +94,13 @@ export default function LoginPage() {
                 {isAr ? 'اسم المستخدم' : 'Username'}
               </Label>
               <div className="relative">
-                <User size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+                <User size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 start-3`} />
                 <Input
                   id="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={isAr ? 'أدخل اسم المستخدم' : 'Enter username'}
-                  className={`${isAr ? 'pr-9' : 'pl-9'} h-11`}
+                  className={`ps-9 h-11`}
                   disabled={loading}
                   autoComplete="username"
                 />
@@ -113,14 +113,14 @@ export default function LoginPage() {
                 {isAr ? 'كلمة المرور' : 'Password'}
               </Label>
               <div className="relative">
-                <Lock size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+                <Lock size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 start-3`} />
                 <Input
                   id="password"
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={isAr ? 'أدخل كلمة المرور' : 'Enter password'}
-                  className={`${isAr ? 'pr-9 pl-9' : 'pl-9 pr-9'} h-11`}
+                  className={`ps-9 pe-9 h-11`}
                   disabled={loading}
                   autoComplete="current-password"
                 />
@@ -129,7 +129,7 @@ export default function LoginPage() {
                   onClick={() => setShowPass(!showPass)}
                   aria-label={showPass ? (isAr ? 'إخفاء كلمة المرور' : 'Hide password') : (isAr ? 'إظهار كلمة المرور' : 'Show password')}
                   aria-pressed={showPass}
-                  className={`absolute top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${isAr ? 'left-3' : 'right-3'}`}
+                  className={`absolute top-1/2 -translate-y-1/2 end-0 p-3 text-gray-500 hover:text-gray-700 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50`}
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -138,7 +138,7 @@ export default function LoginPage() {
 
             {/* Error */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2.5 rounded-lg">
+              <div role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2.5 rounded-lg">
                 {error}
               </div>
             )}
@@ -161,7 +161,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-white/40 text-xs mt-6">
+        <p className="text-center text-white/70 text-xs mt-6">
           SMMS © {new Date().getFullYear()}
         </p>
       </div>

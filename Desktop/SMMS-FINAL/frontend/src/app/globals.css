@@ -125,3 +125,16 @@
   .sidebar-bg   { background-color: hsl(var(--sidebar-bg)); }
   .sidebar-active { background-color: hsl(var(--sidebar-active)); }
 }
+
+/* Horizontal-scroll affordance for wide tables: edge shadows appear only where
+   more content exists (pure CSS, direction-agnostic). */
+@layer components {
+  .table-scroll {
+    overflow-x: auto;
+    background:
+      linear-gradient(to right, hsl(var(--card)) 30%, transparent) left center / 24px 100% no-repeat local,
+      linear-gradient(to left, hsl(var(--card)) 30%, transparent) right center / 24px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, hsl(var(--foreground) / 0.18), transparent) left center / 10px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, hsl(var(--foreground) / 0.18), transparent) right center / 10px 100% no-repeat scroll;
+  }
+}

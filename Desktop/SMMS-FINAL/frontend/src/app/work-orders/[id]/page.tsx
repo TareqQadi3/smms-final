@@ -16,7 +16,7 @@ import {
   ArrowRight, Clock, User, CheckCircle, XCircle,
   UserCheck, Package, ThumbsUp, ThumbsDown, RotateCcw, Lock
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 
 type ActionType =
   | 'transition'
@@ -258,14 +258,14 @@ export default function WorkOrderDetailPage() {
                   {wo.createdAt && (
                     <div>
                       <p className="text-xs text-muted-foreground font-medium">{isAr ? 'تاريخ الإنشاء' : 'Created'}</p>
-                      <p className="font-medium">{format(new Date(wo.createdAt), 'dd/MM/yyyy HH:mm')}</p>
+                      <p className="font-medium">{formatDate(wo.createdAt, lang, true)}</p>
                     </div>
                   )}
                   {wo.slaDeadline && (
                     <div>
                       <p className="text-xs text-muted-foreground font-medium">{tr.slaDeadline}</p>
                       <p className={`font-medium ${wo.slaBreached ? 'text-red-600' : ''}`}>
-                        {format(new Date(wo.slaDeadline), 'dd/MM/yyyy HH:mm')}
+                        {formatDate(wo.slaDeadline, lang, true)}
                         {wo.slaBreached && ' ⚠'}
                       </p>
                     </div>
@@ -331,7 +331,7 @@ export default function WorkOrderDetailPage() {
                                 <User size={11} />{h.actor.fullName}
                               </span>
                             )}
-                            <span>{h.createdAt ? format(new Date(h.createdAt), 'dd/MM HH:mm') : ''}</span>
+                            <span>{formatDate(h.createdAt, lang, true, '')}</span>
                           </div>
                         </div>
                       </div>

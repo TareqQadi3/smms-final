@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { CheckCircle, XCircle } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
 
 export default function ApprovalsPage() {
   const { lang } = useAuthStore();
@@ -73,7 +73,7 @@ export default function ApprovalsPage() {
                 <p>{isAr ? 'لا توجد طلبات بانتظار الموافقة' : 'No pending approvals'}</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 border-b">
                     <tr>
@@ -85,12 +85,12 @@ export default function ApprovalsPage() {
                   <tbody>
                     {pending.map(wo => (
                       <tr key={wo.id} className="border-b last:border-0 hover:bg-muted/30">
-                        <td className="px-4 py-3 font-mono text-xs text-blue-600 font-semibold">{wo.ticketNumber}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-blue-600 font-semibold whitespace-nowrap tabular-nums"><bdi dir="ltr">{wo.ticketNumber}</bdi></td>
                         <td className="px-4 py-3 font-medium max-w-[200px] truncate">{wo.title}</td>
                         <td className="px-4 py-3 text-muted-foreground">{wo.assignedTo?.fullName || '-'}</td>
                         <td className="px-4 py-3 text-muted-foreground text-xs max-w-[150px] truncate">{'-'}</td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">
-                          {wo.createdAt ? format(new Date(wo.createdAt), 'dd/MM/yyyy') : '-'}
+                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap tabular-nums">
+                          {formatDate(wo.createdAt, lang)}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-2">

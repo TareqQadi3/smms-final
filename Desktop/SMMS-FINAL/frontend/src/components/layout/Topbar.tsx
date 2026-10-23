@@ -99,9 +99,9 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
           type="button"
           onClick={onMenuClick}
           aria-label={lang === 'ar' ? 'فتح القائمة' : 'Open menu'}
-          className="lg:hidden p-1.5 rounded-md hover:bg-accent text-muted-foreground"
+          className="lg:hidden inline-flex size-10 items-center justify-center rounded-md hover:bg-accent text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
         >
-          <Menu size={20} />
+          <Menu size={20} aria-hidden="true" />
         </button>
         <h1 className="text-sm font-semibold text-foreground hidden sm:block">
           {tr.appName}
@@ -109,7 +109,7 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
       </div>
 
       {/* Right */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
 
         {/* Theme Switcher */}
         <ThemeSwitcher />
@@ -132,7 +132,7 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
           >
             <Bell size={17} />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-destructive rounded-full text-[10px] font-bold text-white flex items-center justify-center px-0.5">
+              <span className="absolute top-1 end-1 min-w-[16px] h-4 bg-destructive rounded-full text-[10px] font-bold text-white flex items-center justify-center px-0.5">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}

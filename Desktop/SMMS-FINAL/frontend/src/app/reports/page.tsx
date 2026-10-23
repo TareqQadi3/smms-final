@@ -61,7 +61,7 @@ export default function ReportsPage() {
               {[
                 { label: isAr ? 'إجمالي البلاغات' : 'Total Tickets', value: Object.values(stats).reduce((a,b) => a + b, 0), color: 'text-blue-600' },
                 { label: isAr ? 'نشطة' : 'Active', value: stats.new + stats.under_review + stats.assigned + stats.in_progress, color: 'text-orange-600' },
-                { label: isAr ? 'مكتملة' : 'Completed', value: stats.completed + stats.closed, color: 'text-green-600' },
+                { label: isAr ? 'مكتملة' : 'Completed', value: stats.completed + stats.closed, color: 'text-green-700 dark:text-green-500' },
                 { label: isAr ? 'تحتاج إجراء' : 'Need Action', value: stats.waiting_approval + stats.waiting_materials, color: 'text-red-600' },
               ].map(s => (
                 <Card key={s.label} className="border-0 shadow-sm">

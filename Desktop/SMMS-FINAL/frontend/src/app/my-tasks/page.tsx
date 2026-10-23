@@ -13,7 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Eye, PlayCircle } from 'lucide-react';
 import Link from 'next/link';
-import { format } from 'date-fns';
+import { StateMessage } from '@/components/ui/state-message';
 
 export default function MyTasksPage() {
   const { lang, user } = useAuthStore();
@@ -22,6 +22,7 @@ export default function MyTasksPage() {
 
   const [tasks, setTasks] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [actionOpen, setActionOpen] = useState(false);
   const [selectedWo, setSelectedWo] = useState<WorkOrder | null>(null);
   const [actionStatus, setActionStatus] = useState('');
@@ -30,10 +31,11 @@ export default function MyTasksPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const res = await workOrderApi.getAll({ assignedToId: user?.id, page: 0, size: 50 });
       setTasks(res.data.content || []);
-    } catch { /* silent */ }
+    } catch { setLoadError(true); }
     finally { setLoading(false); }
   }, [user?.id]);
 
@@ -88,7 +90,7 @@ export default function MyTasksPage() {
           {[
             { label: isAr ? 'مُعيَّنة' : 'Assigned', value: tasks.filter(t => t.status === 'assigned').length, color: 'text-blue-600' },
             { label: isAr ? 'قيد التنفيذ' : 'In Progress', value: tasks.filter(t => t.status === 'in_progress').length, color: 'text-orange-600' },
-            { label: isAr ? 'مكتملة' : 'Completed', value: done.length, color: 'text-green-600' },
+            { label: isAr ? 'مكتملة' : 'Completed', value: done.length, color: 'text-green-700 dark:text-green-500' },
           ].map(s => (
             <Card key={s.label} className="border-0 shadow-sm">
               <CardContent className="p-4 text-center">
@@ -109,15 +111,19 @@ export default function MyTasksPage() {
               <div className="flex items-center justify-center h-32">
                 <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
               </div>
+            ) : loadError ? (
+              <StateMessage kind="error" onRetry={load} retryLabel={isAr ? 'إعادة المحاولة' : 'Try again'}>
+                {isAr ? 'تعذّر تحميل مهامك. تحقق من الاتصال ثم أعد المحاولة.' : 'Unable to load your tasks. Check your connection and try again.'}
+              </StateMessage>
             ) : active.length === 0 ? (
-              <p className="text-center text-muted-foreground/70 py-10">{tr.noData}</p>
+              <StateMessage>{isAr ? 'لا توجد مهام نشطة حالياً.' : 'You have no active tasks.'}</StateMessage>
             ) : (
               <div className="divide-y">
                 {active.map(wo => (
                   <div key={wo.id} className="px-4 py-4 hover:bg-muted/30 flex items-center justify-between gap-4">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs text-blue-600 font-semibold">{wo.ticketNumber}</span>
+                        <span className="font-mono text-xs text-blue-600 font-semibold whitespace-nowrap tabular-nums"><bdi dir="ltr">{wo.ticketNumber}</bdi></span>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || ''}`}>
                           {tStatus(wo.status, lang)}
                         </span>
@@ -129,13 +135,13 @@ export default function MyTasksPage() {
                       {wo.locationDetail && <p className="text-xs text-muted-foreground mt-0.5">{wo.locationDetail}</p>}
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      <Link href={`/work-orders/${wo.id}`}>
-                        <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                      <Link href={`/work-orders/${wo.id}`} className="inline-flex">
+                        <Button variant="outline" size="sm" className="gap-1.5 text-xs">
                           <Eye size={13} /> {isAr ? 'عرض' : 'View'}
                         </Button>
                       </Link>
                       {techActions[wo.status] && (
-                        <Button size="sm" className="h-8 gap-1.5 text-xs bg-[#0f2744] hover:bg-[#1a3a6b]" onClick={() => openAction(wo)}>
+                        <Button size="sm" className="gap-1.5 text-xs bg-[#0f2744] hover:bg-[#1a3a6b]" onClick={() => openAction(wo)}>
                           <PlayCircle size={13} /> {isAr ? 'تحديث' : 'Update'}
                         </Button>
                       )}
