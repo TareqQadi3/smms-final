@@ -111,7 +111,7 @@ if [ "${SMMS_SKIP_UPLOADS:-0}" != "1" ]; then
   UVOL="$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" \
             --filter "label=com.docker.compose.volume=uploads_data" 2>/dev/null | head -1)"
   if [ -n "$UVOL" ]; then
-    docker run --rm -v "$UVOL":/d:ro -v "$OUT_DIR":/b alpine tar czf "/b/uploads-$TS.tgz" -C /d . \
+    docker run --rm --entrypoint tar -v "$UVOL":/d:ro -v "$OUT_DIR":/b "$IMAGE" czf "/b/uploads-$TS.tgz" -C /d . \
       && log "Uploads archived: uploads-$TS.tgz" || log "WARNING: uploads archive failed"
   else
     log "WARNING: uploads volume not found; attachments are NOT in this backup"
