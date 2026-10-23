@@ -113,12 +113,14 @@ public class WorkOrderController {
     }
 
     @PostMapping("/{id}/lock")
+    @PreAuthorize("hasAnyRole('control_room','technician','hospital_supervisor','region_supervisor','system_admin','maintenance_manager')")
     public ResponseEntity<Void> lock(@PathVariable UUID id, @CurrentUser User actor) {
         workOrderService.lock(id, actor);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{id}/unlock")
+    @PreAuthorize("hasAnyRole('control_room','technician','hospital_supervisor','region_supervisor','system_admin','maintenance_manager')")
     public ResponseEntity<Void> unlock(@PathVariable UUID id, @CurrentUser User actor) {
         workOrderService.unlock(id, actor);
         return ResponseEntity.noContent().build();

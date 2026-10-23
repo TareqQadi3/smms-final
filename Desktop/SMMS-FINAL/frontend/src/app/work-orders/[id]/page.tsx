@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
-import { useT, statusColors, priorityColors } from '@/lib/i18n';
+import { useT, statusColors, priorityColors, tStatus, tPriority } from '@/lib/i18n';
 import { workOrderApi, userApi } from '@/lib/api';
 import { WorkOrder, TicketHistory } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -207,10 +207,10 @@ export default function WorkOrderDetailPage() {
           </div>
           <div className="flex gap-2 flex-wrap">
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[wo.status] || 'bg-gray-100'}`}>
-              {statusLabel[wo.status] || wo.status}
+              {tStatus(wo.status, lang)}
             </span>
             <span className={`px-2 py-1 rounded text-sm font-medium border ${priorityColors[wo.priority] || ''}`}>
-              {wo.priority}
+              {tPriority(wo.priority, lang)}
             </span>
             {wo.slaBreached && (
               <span className="px-2 py-1 rounded text-sm font-medium bg-red-100 text-red-700 border border-red-300">
@@ -316,11 +316,11 @@ export default function WorkOrderDetailPage() {
                         <div className="pb-4 flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[h.toStatus] || 'bg-gray-100'}`}>
-                              {statusLabel[h.toStatus] || h.toStatus}
+                              {tStatus(h.toStatus, lang)}
                             </span>
                             {h.fromStatus && (
                               <span className="text-xs text-muted-foreground">
-                                {isAr ? 'من:' : 'from:'} {statusLabel[h.fromStatus] || h.fromStatus}
+                                {isAr ? 'من:' : 'from:'} {tStatus(h.fromStatus, lang)}
                               </span>
                             )}
                           </div>

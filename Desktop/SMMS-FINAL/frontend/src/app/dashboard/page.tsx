@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
-import { useT, statusColors, priorityColors } from '@/lib/i18n';
+import { useT, statusColors, priorityColors, tStatus, tPriority } from '@/lib/i18n';
 import { dashboardApi, workOrderApi } from '@/lib/api';
 import { DashboardStats, WorkOrder } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -204,12 +204,12 @@ export default function DashboardPage() {
                         <td className="px-4 py-3 max-w-[200px] truncate text-foreground font-medium">{wo.title}</td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || 'bg-gray-100'}`}>
-                            {statusLabel[wo.status] || wo.status}
+                            {tStatus(wo.status, lang)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${priorityColors[wo.priority] || ''}`}>
-                            {wo.priority}
+                            {tPriority(wo.priority, lang)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-muted-foreground text-xs">

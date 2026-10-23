@@ -12,6 +12,7 @@ import com.smms.exception.*;
 import com.smms.mapper.WorkOrderMapper;
 import com.smms.repository.*;
 import com.smms.security.TenantSecurityService;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
@@ -38,6 +39,7 @@ public class WorkOrderService {
     private final WorkOrderMapper mapper;
     private final PlanEnforcementService planEnforcement;
     private final TenantSecurityService tenantSecurity;
+    private final EntityManager entityManager;
 
     // ── Create ────────────────────────────────────────────
 
@@ -81,6 +83,10 @@ public class WorkOrderService {
 
         wo.setTenantId(TenantContext.get());
         WorkOrder saved = workOrderRepo.save(wo);
+        // ticket_number and sla_deadline are filled by DB triggers on INSERT; flush the insert and
+        // reload the row so the response carries those values instead of nulls.
+        workOrderRepo.flush();
+        entityManager.refresh(saved);
         recordHistory(saved, null, TicketStatus.NEW, actor, "Ticket created");
         notificationService.notifyControlRoom(saved);
         return mapper.toResponse(saved);
@@ -98,6 +104,7 @@ public class WorkOrderService {
         TicketStatus from = wo.getStatus();
         TicketStatus to   = req.getTargetStatus();
 
+        rejectDedicatedEndpointTransition(from, to, actor.getRole());
         workflowEngine.validate(from, to, actor.getRole());
 
         TicketStatus previous = wo.getStatus();
@@ -111,6 +118,31 @@ public class WorkOrderService {
         notificationService.notifyTransition(wo, actor);
 
         return mapper.toResponse(wo);
+    }
+
+    /**
+     * Guards the generic /transition path against moves that have dedicated endpoints which
+     * record required data (assignee, approval decision, reopen counter).
+     * Conditions (reject when any holds):
+     *  - to == ASSIGNED: needs a technician, only /assign sets one (else the ticket is orphaned).
+     *  - from == WAITING_APPROVAL: approval decisions go through /approval (records approvedBy and
+     *    decision). system_admin is exempt because the UI offers admin this move only via /transition
+     *    and /approval is restricted to operating_company_manager.
+     *  - from == COMPLETED and to == IN_PROGRESS: reopen goes through /reopen (counter + reason).
+     */
+    static void rejectDedicatedEndpointTransition(TicketStatus from, TicketStatus to, UserRole role) {
+        if (to == TicketStatus.ASSIGNED) {
+            throw new IllegalArgumentException(
+                "Use POST /api/work-orders/{id}/assign to assign a technician; generic transition to assigned is not allowed");
+        }
+        if (from == TicketStatus.WAITING_APPROVAL && role != UserRole.system_admin) {
+            throw new IllegalArgumentException(
+                "Use POST /api/work-orders/{id}/approval to decide on approval requests");
+        }
+        if (from == TicketStatus.COMPLETED && to == TicketStatus.IN_PROGRESS) {
+            throw new IllegalArgumentException(
+                "Use POST /api/work-orders/{id}/reopen to reopen a completed ticket");
+        }
     }
 
     // ── Assign technician ─────────────────────────────────
@@ -218,7 +250,24 @@ public class WorkOrderService {
 
     // ── Lock / Unlock ─────────────────────────────────────
 
+    /**
+     * Roles that work tickets through the workflow (WorkflowEngine /transition roles that act on
+     * the ticket lifecycle). Residents/departments/others only submit and view, so they may not lock.
+     */
+    private static final java.util.Set<UserRole> LOCK_ROLES = java.util.Set.of(
+        UserRole.control_room, UserRole.technician, UserRole.hospital_supervisor,
+        UserRole.region_supervisor, UserRole.system_admin, UserRole.maintenance_manager);
+
+    private void assertCanLock(User actor) {
+        if (!LOCK_ROLES.contains(actor.getRole())) {
+            throw new AccessDeniedException("Role not permitted to lock/unlock tickets");
+        }
+    }
+
     public void lock(UUID id, User actor) {
+        assertCanLock(actor);
+        // getActiveWorkOrder = tenant scoping + TenantSecurityService.assertWorkOrderAccess
+        // (technicians only on their own assigned tickets)
         WorkOrder wo = getActiveWorkOrder(id, actor);
         if (wo.isLocked()) throw new TicketLockedException("Already locked");
         wo.setLocked(true);
@@ -228,6 +277,7 @@ public class WorkOrderService {
     }
 
     public void unlock(UUID id, User actor) {
+        assertCanLock(actor);
         WorkOrder wo = getActiveWorkOrder(id, actor);
         if (!wo.isLocked()) return;
         if (!wo.getLockedBy().getId().equals(actor.getId()) &&

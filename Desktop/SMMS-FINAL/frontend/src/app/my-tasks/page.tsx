@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
-import { useT, statusColors, priorityColors } from '@/lib/i18n';
+import { useT, statusColors, priorityColors, tStatus, tPriority } from '@/lib/i18n';
 import { workOrderApi } from '@/lib/api';
 import { WorkOrder } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -119,10 +119,10 @@ export default function MyTasksPage() {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="font-mono text-xs text-blue-600 font-semibold">{wo.ticketNumber}</span>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || ''}`}>
-                          {statusLabel[wo.status] || wo.status}
+                          {tStatus(wo.status, lang)}
                         </span>
                         <span className={`px-1.5 py-0.5 rounded text-xs border ${priorityColors[wo.priority] || ''}`}>
-                          {wo.priority}
+                          {tPriority(wo.priority, lang)}
                         </span>
                       </div>
                       <p className="font-medium text-sm truncate">{wo.title}</p>

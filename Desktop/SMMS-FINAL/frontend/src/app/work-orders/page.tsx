@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
-import { useT, statusColors, priorityColors } from '@/lib/i18n';
+import { useT, statusColors, priorityColors, tStatus, tPriority } from '@/lib/i18n';
 import { workOrderApi, controlRoomApi } from '@/lib/api';
 import { WorkOrder, TicketStatus, TicketPriority } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -182,12 +182,12 @@ export default function WorkOrdersPage() {
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusColors[wo.status] || 'bg-gray-100'}`}>
-                            {statusLabel[wo.status] || wo.status}
+                            {tStatus(wo.status, lang)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${priorityColors[wo.priority] || ''}`}>
-                            {wo.priority}
+                            {tPriority(wo.priority, lang)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-600">{wo.assignedTo?.fullName || '-'}</td>
