@@ -6,6 +6,7 @@ import com.smms.entity.TenantSubscription;
 import com.smms.entity.User;
 import com.smms.enums.PlanType;
 import com.smms.enums.TenantStatus;
+import com.smms.enums.UserRole;
 import com.smms.exception.GlobalExceptionHandler;
 import com.smms.filter.RequestTracingFilter;
 import com.smms.repository.TenantSubscriptionRepository;
@@ -52,7 +53,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails user = userDetailsService.loadUserByUsername(username);
                 if (jwtService.isAccessToken(token)
-                        && jwtService.isTokenValid(token, (com.smms.entity.User) user)) {
+                        && jwtService.isTokenValid(token, (com.smms.entity.User) user)
+                        && tenantClaimMatches(token, (User) user)) {
                     var auth = new UsernamePasswordAuthenticationToken(
                         user, null, user.getAuthorities());
                     auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(req));
@@ -106,6 +108,24 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * A tenant user must carry the tenant they are stored with. A missing tenant (claim or row) used
+     * to be read as "platform admin" and widened access, so such tokens are never authenticated.
+     * Only system_admin may have an empty tenant, and then both sides must be empty.
+     */
+    private boolean tenantClaimMatches(String token, User user) {
+        UUID claim = jwtService.extractTenantId(token);
+        UUID stored = user.getTenantId();
+        boolean ok = user.getRole() == UserRole.system_admin
+            ? java.util.Objects.equals(claim, stored)
+            : claim != null && claim.equals(stored);
+        if (!ok) {
+            logger.warn("SECURITY: rejected token, tenant claim does not match the account's tenant"
+                + " (userId=" + user.getId() + ")");
+        }
+        return ok;
     }
 
     private void writeError(HttpServletResponse res, HttpStatus status, String message)

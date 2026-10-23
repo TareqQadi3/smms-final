@@ -4,6 +4,7 @@ import com.smms.dto.request.LoginRequest;
 import com.smms.dto.response.AuthResponse;
 import com.smms.entity.Tenant;
 import com.smms.entity.User;
+import com.smms.enums.UserRole;
 import com.smms.exception.AuthException;
 import com.smms.repository.TenantRepository;
 import com.smms.repository.UserRepository;
@@ -11,6 +12,7 @@ import com.smms.exception.AccountLockedException;
 import com.smms.security.BruteForceProtectionService;
 import com.smms.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -48,6 +51,7 @@ public class AuthService {
             throw new AuthException("Invalid credentials");
         }
         bruteForce.recordSuccess(req.getUsername());
+        assertTenantAssigned(user);
 
         user.setLastLogin(Instant.now());
         userRepo.save(user);
@@ -81,6 +85,7 @@ public class AuthService {
         User user = userRepo.findByUsernameAndDeletedAtIsNull(username)
             .orElseThrow(() -> new AuthException("Invalid token"));
         if (!jwtService.isTokenValid(refreshToken, user)) throw new AuthException("Token expired");
+        assertTenantAssigned(user);
         return AuthResponse.builder()
             .token(jwtService.generateToken(user))
             .refreshToken(refreshToken)
@@ -90,5 +95,16 @@ public class AuthService {
             .fullName(user.getFullName())
             .fullNameAr(user.getFullNameAr())
             .build();
+    }
+
+    /**
+     * Only system_admin is platform-level. Any other account without a tenant would be treated as a
+     * platform admin by the tenant filters, so it cannot sign in until a tenant is assigned.
+     */
+    private void assertTenantAssigned(User user) {
+        if (user.getRole() != UserRole.system_admin && user.getTenantId() == null) {
+            log.warn("SECURITY: login refused, account has no tenant assigned (userId={})", user.getId());
+            throw new AuthException("Invalid credentials");
+        }
     }
 }

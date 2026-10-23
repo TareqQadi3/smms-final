@@ -42,6 +42,7 @@ class JwtAuthFilterTest {
         user.setId(java.util.UUID.randomUUID());
         user.setUsername("tech1");
         user.setRole(UserRole.technician);
+        user.setTenantId(java.util.UUID.randomUUID());
 
         UserDetailsService uds = mock(UserDetailsService.class);
         when(uds.loadUserByUsername("tech1")).thenReturn(user);
@@ -73,5 +74,45 @@ class JwtAuthFilterTest {
     @Test
     void refreshTokenIsNotAuthenticatedAsBearer() throws Exception {
         assertThat(authenticatedWith(jwtService.generateRefreshToken(user))).isFalse();
+    }
+
+    @Test
+    void nonAdminTokenWithEmptyTenantClaimIsNotAuthenticated() throws Exception {
+        user.setTenantId(null);
+        // token issued while the user had no tenant: claim is empty
+        assertThat(authenticatedWith(jwtService.generateToken(user))).isFalse();
+    }
+
+    @Test
+    void nonAdminWhoseTenantWasAssignedLaterNeedsAFreshToken() throws Exception {
+        java.util.UUID assigned = user.getTenantId();
+        user.setTenantId(null);
+        String oldToken = jwtService.generateToken(user);
+        user.setTenantId(assigned);
+        assertThat(authenticatedWith(oldToken)).isFalse();
+        assertThat(authenticatedWith(jwtService.generateToken(user))).isTrue();
+    }
+
+    @Test
+    void tokenTenantDifferentFromStoredTenantIsNotAuthenticated() throws Exception {
+        String token = jwtService.generateToken(user);
+        user.setTenantId(java.util.UUID.randomUUID()); // account moved to another tenant
+        assertThat(authenticatedWith(token)).isFalse();
+    }
+
+    @Test
+    void systemAdminWithEmptyTenantAuthenticates() throws Exception {
+        user.setRole(UserRole.system_admin);
+        user.setTenantId(null);
+        assertThat(authenticatedWith(jwtService.generateToken(user))).isTrue();
+    }
+
+    @Test
+    void systemAdminTokenWithTenantClaimThatNoLongerMatchesIsRejected() throws Exception {
+        user.setRole(UserRole.system_admin);
+        user.setTenantId(java.util.UUID.randomUUID());
+        String token = jwtService.generateToken(user);
+        user.setTenantId(null);
+        assertThat(authenticatedWith(token)).isFalse();
     }
 }

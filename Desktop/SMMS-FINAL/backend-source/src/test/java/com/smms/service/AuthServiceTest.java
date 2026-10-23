@@ -42,6 +42,7 @@ class AuthServiceTest {
         user.setUsername("tech1");
         user.setPasswordHash("hash");
         user.setRole(UserRole.technician);
+        user.setTenantId(java.util.UUID.randomUUID());
         user.setActive(true);
         when(userRepo.findByUsernameAndDeletedAtIsNull("tech1")).thenReturn(Optional.of(user));
 
@@ -88,6 +89,35 @@ class AuthServiceTest {
     void refreshRejectsNonRefreshToken() {
         when(jwtService.isRefreshToken("access")).thenReturn(false);
         assertThatThrownBy(() -> service.refresh("access")).isInstanceOf(AuthException.class);
+        verify(jwtService, never()).generateToken(any());
+    }
+
+    @Test
+    void nonAdminWithoutTenantCannotLogin() {
+        user.setTenantId(null);
+        when(encoder.matches("pw", "hash")).thenReturn(true);
+        assertThatThrownBy(() -> service.login(req)).isInstanceOf(AuthException.class)
+            .hasMessage("Invalid credentials");
+        verify(jwtService, never()).generateToken(any());
+        verify(jwtService, never()).generateRefreshToken(any());
+    }
+
+    @Test
+    void systemAdminWithoutTenantCanLogin() {
+        user.setRole(UserRole.system_admin);
+        user.setTenantId(null);
+        when(encoder.matches("pw", "hash")).thenReturn(true);
+        when(jwtService.generateToken(user)).thenReturn("a");
+        assertThat(service.login(req).getToken()).isEqualTo("a");
+    }
+
+    @Test
+    void refreshIsRefusedForNonAdminWithoutTenant() {
+        user.setTenantId(null);
+        when(jwtService.isRefreshToken("r")).thenReturn(true);
+        when(jwtService.extractUsername("r")).thenReturn("tech1");
+        when(jwtService.isTokenValid("r", user)).thenReturn(true);
+        assertThatThrownBy(() -> service.refresh("r")).isInstanceOf(AuthException.class);
         verify(jwtService, never()).generateToken(any());
     }
 }
