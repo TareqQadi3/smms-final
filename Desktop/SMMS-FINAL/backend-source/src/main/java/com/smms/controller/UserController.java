@@ -88,8 +88,12 @@ public class UserController {
 
     @PostMapping("/api/users/me/change-password")
     public ResponseEntity<Void> changePassword(@RequestBody ChangePasswordRequest req,
-                                                @CurrentUser User actor) {
-        userService.changePassword(actor.getId(), req.getCurrentPassword(), req.getNewPassword());
+                                                @CurrentUser User actor,
+                                                jakarta.servlet.http.HttpServletRequest http) {
+        // The caller's own login session survives; all other sessions of the user are revoked
+        Object sid = http.getAttribute(com.smms.security.JwtAuthFilter.REQ_ATTR_SID);
+        userService.changePassword(actor.getId(), req.getCurrentPassword(), req.getNewPassword(),
+            sid instanceof java.util.UUID u ? u : null);
         return ResponseEntity.noContent().build();
     }
 

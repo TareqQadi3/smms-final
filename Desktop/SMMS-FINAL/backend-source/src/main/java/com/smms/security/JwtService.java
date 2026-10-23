@@ -16,7 +16,10 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Optional;
 import java.util.HexFormat;
 import java.util.Set;
 import java.util.Map;
@@ -43,6 +46,7 @@ public class JwtService {
 
     public static final String TYPE_ACCESS  = "access";
     public static final String TYPE_REFRESH = "refresh";
+    public static final String CLAIM_SID    = "sid";
 
     @Value("${app.jwt.secret}")
     private String secret;
@@ -94,12 +98,24 @@ public class JwtService {
         }
     }
 
+    /**
+     * Legacy shape: an access token without a session id. Production login uses
+     * {@link #generateToken(User, UUID)}; this one stays for tests and for simulating tokens that
+     * were issued before sessions existed.
+     */
     public String generateToken(User user) {
-        return build(user, expiryHours * 3600_000L,
-            Map.of("typ",      TYPE_ACCESS,
-                   "role",     user.getRole().name(),
-                   "centerId", user.getCenter()   != null ? user.getCenter().getId().toString()   : "",
-                   "tenantId", user.getTenantId() != null ? user.getTenantId().toString()          : ""));
+        return generateToken(user, null);
+    }
+
+    /** Access token bound to the login session {@code sid} (checked on every request). */
+    public String generateToken(User user, UUID sid) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("typ",      TYPE_ACCESS);
+        claims.put("role",     user.getRole().name());
+        claims.put("centerId", user.getCenter()   != null ? user.getCenter().getId().toString()   : "");
+        claims.put("tenantId", user.getTenantId() != null ? user.getTenantId().toString()          : "");
+        if (sid != null) claims.put(CLAIM_SID, sid.toString());
+        return build(user, new Date(System.currentTimeMillis() + expiryHours * 3600_000L), null, claims);
     }
 
     /** Extracts tenantId claim from token — empty string means platform admin (null tenant). */
@@ -109,8 +125,59 @@ public class JwtService {
         try { return UUID.fromString(raw); } catch (IllegalArgumentException e) { return null; }
     }
 
+    /** Legacy refresh token (no session, no jti). Production code never issues it; it is refused on refresh. */
     public String generateRefreshToken(User user) {
-        return build(user, refreshExpiryDays * 86400_000L, Map.of("typ", TYPE_REFRESH));
+        return build(user, new Date(System.currentTimeMillis() + refreshExpiryDays * 86400_000L), null,
+            Map.of("typ", TYPE_REFRESH));
+    }
+
+    /**
+     * Refresh token of a session. {@code jti} is random and single-use (rotation); the expiry is the
+     * absolute end of the session so that rotating never extends a login.
+     */
+    public String generateRefreshToken(User user, UUID sid, String jti, Instant expiresAt) {
+        return build(user, Date.from(expiresAt), jti,
+            Map.of("typ", TYPE_REFRESH, CLAIM_SID, sid.toString()));
+    }
+
+    public long getRefreshExpiryDays() { return refreshExpiryDays; }
+
+    /** Session id claim, or null for legacy tokens. Throws JwtException for an invalid or expired token. */
+    public UUID extractSessionId(String token) {
+        return parseUuid(claims(token).get(CLAIM_SID));
+    }
+
+    /** Refresh-token id claim. */
+    public String extractJti(String token) {
+        return claims(token).getId();
+    }
+
+    public Instant extractIssuedAt(String token) {
+        Date d = claims(token).getIssuedAt();
+        return d == null ? null : d.toInstant();
+    }
+
+    public Instant extractExpiration(String token) {
+        return claims(token).getExpiration().toInstant();
+    }
+
+    /**
+     * Claims of a token whose signature is valid, also when it has expired. Used only to find the
+     * session to revoke on logout; never to authenticate.
+     */
+    public Optional<Claims> parseAllowExpired(String token) {
+        try {
+            return Optional.of(claims(token));
+        } catch (ExpiredJwtException e) {
+            return Optional.of(e.getClaims());
+        } catch (JwtException | IllegalArgumentException e) {
+            return Optional.empty();
+        }
+    }
+
+    public static UUID parseUuid(Object raw) {
+        if (raw == null) return null;
+        try { return UUID.fromString(raw.toString()); } catch (IllegalArgumentException e) { return null; }
     }
 
     /**
@@ -149,14 +216,14 @@ public class JwtService {
         } catch (JwtException e) { return false; }
     }
 
-    private String build(User user, long ttl, Map<String, Object> extra) {
-        return Jwts.builder()
+    private String build(User user, Date expiration, String jti, Map<String, Object> extra) {
+        var b = Jwts.builder()
             .subject(user.getUsername())
             .claims(extra)
             .issuedAt(new Date())
-            .expiration(new Date(System.currentTimeMillis() + ttl))
-            .signWith(key())
-            .compact();
+            .expiration(expiration);
+        if (jti != null) b.id(jti);
+        return b.signWith(key()).compact();
     }
 
     private Claims claims(String token) {

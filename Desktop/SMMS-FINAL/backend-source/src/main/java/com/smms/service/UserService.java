@@ -1,5 +1,6 @@
 package com.smms.service;
 
+import com.smms.auth.AuthSessionService;
 import com.smms.dto.request.CreateUserRequest;
 import com.smms.dto.request.UpdateUserRequest;
 import com.smms.dto.response.UserResponse;
@@ -41,6 +42,13 @@ public class UserService {
     private final TenantSecurityService tenantSecurity;
     private final AdminScopePolicy policy;
     private final UserAccountValidator validator;
+
+    /**
+     * Session revocation hooks. Field-injected (not a constructor argument) so the many unit tests
+     * that build this service by hand keep compiling; null only in such tests.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AuthSessionService authSessions;
 
     public UserResponse create(CreateUserRequest req, User actor) {
         // ── Role hierarchy first: a forbidden role is 403 whatever the ids say ──
@@ -173,6 +181,14 @@ public class UserService {
     }
 
     public void changePassword(UUID id, String currentPassword, String newPassword) {
+        changePassword(id, currentPassword, newPassword, null);
+    }
+
+    /**
+     * Self-service change. All OTHER login sessions of the user end (a stolen refresh token stops
+     * working); {@code currentSid}, the caller's own session, stays. Clears the must-change flag.
+     */
+    public void changePassword(UUID id, String currentPassword, String newPassword, UUID currentSid) {
         User user = tenantSecurity.requireUser(id);
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
             throw new IllegalArgumentException("Current password is incorrect");
@@ -182,7 +198,11 @@ public class UserService {
             throw new IllegalArgumentException("New password must be 8-128 characters");
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setMustChangePassword(false);
         userRepo.save(user);
+        if (authSessions != null) {
+            authSessions.revokeOthers(user.getId(), currentSid, AuthSessionService.REASON_PASSWORD_CHANGED);
+        }
     }
 
     public UserResponse update(UUID id, UpdateUserRequest req, User actor) {
@@ -263,7 +283,14 @@ public class UserService {
             throw new AccessDeniedException("You cannot deactivate your own account");
         }
         user.setActive(active);
+        if (!active) {
+            // Cut off every token: sid-bound ones through the revoked sessions, legacy ones by time
+            user.setTokensValidAfter(java.time.Instant.now());
+        }
         userRepo.save(user);
+        if (!active && authSessions != null) {
+            authSessions.revokeAllForUser(user.getId(), AuthSessionService.REASON_DEACTIVATED);
+        }
     }
 
     public void resetPassword(UUID id, String newPassword) {
@@ -273,7 +300,13 @@ public class UserService {
         }
         User user = tenantSecurity.requireUser(id);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        // The new password is known to the admin: the user must replace it, and old tokens die
+        user.setMustChangePassword(true);
+        user.setTokensValidAfter(java.time.Instant.now());
         userRepo.save(user);
+        if (authSessions != null) {
+            authSessions.revokeAllForUser(user.getId(), AuthSessionService.REASON_PASSWORD_RESET);
+        }
     }
 
     /**
