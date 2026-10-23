@@ -139,7 +139,7 @@ export default function WorkOrdersPage() {
                   className={`ps-9 h-9`}
                 />
               </div>
-              <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v === 'all' ? '' : v); setPage(0); }}>
+              <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(!v || v === 'all' ? '' : v); setPage(0); }}>
                 <SelectTrigger className="w-40 h-9">
                   <SelectValue placeholder={tr.status} />
                 </SelectTrigger>
@@ -148,7 +148,7 @@ export default function WorkOrdersPage() {
                   {STATUSES.map(s => <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Select value={filterPriority} onValueChange={(v) => { setFilterPriority(v === 'all' ? '' : v); setPage(0); }}>
+              <Select value={filterPriority} onValueChange={(v) => { setFilterPriority(!v || v === 'all' ? '' : v); setPage(0); }}>
                 <SelectTrigger className="w-36 h-9">
                   <SelectValue placeholder={tr.priority} />
                 </SelectTrigger>
