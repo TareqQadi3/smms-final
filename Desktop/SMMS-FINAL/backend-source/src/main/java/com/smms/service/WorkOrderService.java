@@ -402,6 +402,7 @@ public class WorkOrderService {
         wo.setLockedBy(actor);
         wo.setLockedAt(Instant.now());
         workOrderRepo.save(wo);
+        recordHistory(wo, wo.getStatus(), wo.getStatus(), actor, "locked");
     }
 
     public void unlock(UUID id, User actor) {
@@ -416,6 +417,7 @@ public class WorkOrderService {
         wo.setLockedBy(null);
         wo.setLockedAt(null);
         workOrderRepo.save(wo);
+        recordHistory(wo, wo.getStatus(), wo.getStatus(), actor, "unlocked");
     }
 
     // ── Get by ID ─────────────────────────────────────────

@@ -33,6 +33,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ErrorBody> conflict(ConflictException e) {
+        log.warn("Conflict: {}", e.getMessage());
+        return error(HttpStatus.CONFLICT, e.getMessage());
+    }
+
     /** Unique/FK violations that slipped past service checks: 409 without leaking constraint names. */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity<ErrorBody> integrity(org.springframework.dao.DataIntegrityViolationException e) {

@@ -5,6 +5,8 @@ import com.smms.dto.request.UpdateControlRoomRequest;
 import com.smms.dto.response.ControlRoomResponse;
 import com.smms.entity.Center;
 import com.smms.entity.ControlRoom;
+import com.smms.enums.ControlRoomType;
+import com.smms.exception.ConflictException;
 import com.smms.exception.ResourceNotFoundException;
 import com.smms.repository.ControlRoomRepository;
 import com.smms.entity.User;
@@ -78,6 +80,7 @@ public class ControlRoomService {
         Center center = tenantSecurity.requireCenter(req.getCenterId());
         policy.assertCenterInScope(actor, center);
         UUID tenantId = policy.resolveTenantForNewEntity(null, center);
+        assertTypeFree(center.getId(), req.getType(), null);
 
         ControlRoom cr = ControlRoom.builder()
             .center(center)
@@ -99,6 +102,7 @@ public class ControlRoomService {
     public ControlRoomResponse update(UUID id, UpdateControlRoomRequest req, User actor) {
         ControlRoom cr = tenantSecurity.requireControlRoom(id);
         policy.assertControlRoomInScope(actor, cr);
+        UUID targetCenterId = cr.getCenter() != null ? cr.getCenter().getId() : null;
         if (req.getCenterId() != null) {
             UUID current = cr.getCenter() != null ? cr.getCenter().getId() : null;
             if (!req.getCenterId().equals(current)) {
@@ -108,14 +112,32 @@ public class ControlRoomService {
                     throw new AccessDeniedException("You cannot move a control room to another center");
                 }
                 policy.assertSameTenant(cr, target);
+                targetCenterId = target.getId();
+                assertTypeFree(targetCenterId, req.getType() != null ? req.getType() : cr.getType(), cr.getId());
                 cr.setCenter(target);
             }
         }
         if (StringUtils.hasText(req.getName()))   cr.setName(req.getName());
         if (StringUtils.hasText(req.getNameAr())) cr.setNameAr(req.getNameAr());
         if (StringUtils.hasText(req.getCode()))   cr.setCode(req.getCode().toUpperCase());
-        if (req.getType() != null)                cr.setType(req.getType());
+        if (req.getType() != null && req.getType() != cr.getType()) {
+            assertTypeFree(targetCenterId, req.getType(), cr.getId());
+            cr.setType(req.getType());
+        }
         return toResponse(controlRoomRepo.save(cr));
+    }
+
+    /**
+     * One room per (center, type), including inactive ones (the DB unique index covers them too).
+     * Reported as a clear 409; the index stays as the backstop for concurrent requests.
+     */
+    private void assertTypeFree(UUID centerId, ControlRoomType type, UUID ignoreRoomId) {
+        if (centerId == null || type == null) return;
+        controlRoomRepo.findByCenterIdAndType(centerId, type)
+            .filter(existing -> !existing.getId().equals(ignoreRoomId))
+            .ifPresent(existing -> {
+                throw new ConflictException("A control room of this type already exists in this center");
+            });
     }
 
     ControlRoomResponse toResponse(ControlRoom cr) {
