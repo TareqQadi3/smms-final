@@ -65,7 +65,7 @@ Seeding test accounts (needs user authorization first): `bash Desktop/SMMS-FINAL
 - **Troubleshooting (Assumptions from prior commits):** enum insert errors -> check `@JdbcTypeCode(NAMED_ENUM)`; login blocked from browser -> check CORS origin pattern; Node build errors -> frontend images use Node 22.
 
 ## 9. Known bugs and risks (open)
-- SEC-005 / DEF-005: residents/departments/supervisors can see tenant-wide tickets (needs a product rule).
+- SEC-005 / DEF-005: FIXED (branch `claude/def-005-request-visibility`, 11cd966 + 26d1dbf) under provisional role rules; waiting for product-owner confirmation. Still open nearby: SEC-A users created by the platform admin get a null tenant until restart; SEC-B `GET /api/admin/users` is open to control_room; SEC-C and SEC-D accept any control-room grant, region or center; SEC-H no max page size; SEC-I tenant API returns raw entities; no department link in the data model (departments see only their own submissions).
 - SEC-001: bulk import has no tenant handling.
 - DB-001: TicketHistory/Attachment/Notification entities do not map `tenant_id`.
 - DB-002: no migration tool. DB-003: `workflow_functions.sql` not mounted. DB-005: no CHECK constraints (e.g. closed_at >= created_at).
@@ -97,7 +97,7 @@ Stopping point: audits done, fixes committed and pushed, docs written; UI work (
 **Exact next action (user):** in the Codespace terminal run the seeder dry run (`bash Desktop/SMMS-FINAL/scripts/seed-test-accounts.sh`), review, then authorize `--apply`; afterwards authorize the QA campaign start. The Codespace must first pull the latest branch commits so the fixes are present (Assumption: it was created before them).
 
 ## 12. Open questions for the user
-1. Visibility rule for residents and departments (blocks DEF-005 fix).
+1. Confirm the provisional visibility rules applied by the DEF-005 fix (resident/department: own submissions; control_room: own center AND assigned control rooms; hospital supervisor and maintenance/electrical/operating-company managers: own center; warehouse: own center, materials tickets; region supervisor: own region; `other`: none).
 2. Purpose of the `other` role.
 3. Authorize a second test region/center/tenant for isolation tests?
 4. Build the missing features or record them as gaps?
@@ -105,7 +105,7 @@ Stopping point: audits done, fixes committed and pushed, docs written; UI work (
 
 ## 13. Roadmap (Assumptions; proposed, not approved)
 1. Seed accounts, start QA campaign (qa/test-plan.md).
-2. Decide visibility rule, then fix DEF-005/SEC-005 with tenant-scoped queries and tests.
+2. Deploy the DEF-005 branch to the user's Codespace, then seed accounts only after explicit authorization and start the QA campaign.
 3. Add a migration tool (Flyway) and map `tenant_id` on remaining entities; add CHECK constraints.
 4. Rotate secrets; stop committing JWT secrets.
 5. Implement missing features per user decision.

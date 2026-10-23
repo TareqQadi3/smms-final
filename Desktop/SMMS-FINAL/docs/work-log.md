@@ -44,3 +44,11 @@ Chronological. Facts only; secrets never recorded. See [project-memory.md](proje
 - Commands: `ls` and `git log` to verify skill counts (12 user-level folders, 111 repo-level of which 6 smms-*) and commit hashes.
 - Another agent was concurrently working on UI-002/004 in this checkout.
 - Next steps: user authorizes seeding (dry run then `--apply` in the Codespace), then QA campaign; answer open questions in project-memory.md section 12.
+
+### Entry 7 - DEF-005 request visibility fix (2026-10-23, Opus plan / Sonnet implementation)
+- Phase: the plan was written by an agent that reported model `claude-opus-5-5`; implementation and tests by agents that reported `claude-sonnet-5-5`. The session model itself was Sonnet 5.5, so Opus was used only through the planning agent.
+- Environment: Claude Remote sandbox (isolated git worktree, branch `claude/def-005-request-visibility`, based on 628dbfe). Not the user's Codespace.
+- Changes: new `WorkOrderAccessPolicy` + `WorkOrderScope` used by search, detail, history, attachments, every write path, notifications, dashboards and the WebSocket; `/uploads` returns 404 in nginx (attachments are served only through the access-controlled API). Out-of-scope tickets return 404. Commits `11cd966`, `26d1dbf`.
+- Tests actually run: `mvn test` 258 tests, 0 failures (baseline 187). Isolated two-tenant throwaway stack (own compose project, own ports, temporary storage): 222/223 probes passed; the 1 miss was a wrong probe expectation (technician filter forced to self, nothing widened). Cross-tenant, cross-center, cross-region and same-center isolation were tested there.
+- Not done / still open: SEC-A, SEC-B, SEC-C, SEC-D, SEC-H, SEC-I (see project-memory.md); not deployed to the user's Codespace; seeding and QA campaign not started; frontend unchanged.
+- Next step: user pulls the branch into the Codespace (see final report), then authorizes seeding.

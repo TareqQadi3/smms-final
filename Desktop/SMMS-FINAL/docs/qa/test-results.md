@@ -80,7 +80,7 @@ Environment for each run must be recorded (Codespace name or local copy, commit 
 | QA-808 | technician | account verified | [§7H](test-plan.md) | 403 on submit via API |  | NOT TESTED |  |  |  |
 | QA-901 | technician, control_room | tokens obtained | [§10](test-plan.md) | 403 warehouse action |  | NOT TESTED |  |  |  |
 | QA-902 | warehouse, admin | tokens obtained | [§10](test-plan.md) | 403 approval |  | NOT TESTED |  |  |  |
-| QA-903 | technician | tokens obtained | [§10](test-plan.md) | 403 on unassigned ticket |  | NOT TESTED |  |  |  |
+| QA-903 | technician | tokens obtained | [§10](test-plan.md) | 404 on unassigned ticket (was 403 before the DEF-005 fix) |  | NOT TESTED |  |  |  |
 | QA-904 | Tareq | tokens obtained | [§10](test-plan.md) | 403 creating system_admin |  | NOT TESTED |  |  |  |
 | QA-905 | Tareq | tokens obtained | [§10](test-plan.md) | 403 reset-password |  | NOT TESTED |  |  |  |
 | QA-906 | resident + cr.* | tokens obtained | [§10](test-plan.md) | lock behaviour documented |  | NOT TESTED |  |  |  |
@@ -130,7 +130,7 @@ QA rows above remain NOT TESTED; the QA campaign has not started. Only defect st
 | DEF-003 | Fixed in `35a0edf` — verified on local sandbox API (not yet in Codespace) |
 | DEF-004 | Fixed in `c46cafb` — verified on local sandbox API (not yet in Codespace) |
 | DEF-006 | Fixed in `35a0edf` — verified on local sandbox API (not yet in Codespace) |
-| DEF-005 | Open — needs product visibility rule |
+| DEF-005 | Fixed on branch `claude/def-005-request-visibility` (commits 11cd966, 26d1dbf) with `WorkOrderAccessPolicy`; 258 unit tests pass; 222/223 probes passed on an isolated two-tenant throwaway stack (the 1 miss was a wrong probe expectation). Provisional product rules applied (see project-memory.md). Not yet deployed to the user's Codespace. |
 | DEF-007, DEF-008, DEF-009, DEF-010, DEF-011, DEF-012 | Status not re-verified in this update; treat as open. Note `35a0edf` also tightened generic `/transition` rules, which may affect DEF-007 (unverified). |
 
 Audit finding IDs fixed in the same commits (SEC-002/003/004/006/008/009) are tracked in [test-plan.md](test-plan.md) "Updates after audit/fixes". Findings files themselves lived in the sandbox scratchpad and were not committed.

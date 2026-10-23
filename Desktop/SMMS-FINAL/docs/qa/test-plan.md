@@ -223,7 +223,7 @@ UI hiding is not proof. Use curl/Playwright `request` with each token.
 |---|---|---|---|
 | QA-901 | `POST /work-orders/{id}/warehouse` | technician, control_room | 403 |
 | QA-902 | `POST /work-orders/{id}/approval` | warehouse, system_admin | 403 |
-| QA-903 | `GET /work-orders/{id}` of a ticket not assigned to them | technician | 403 |
+| QA-903 | `GET /work-orders/{id}` of a ticket not assigned to them | technician | 404 (changed from 403 by the DEF-005 fix: out-of-scope tickets are hidden as not found) |
 | QA-904 | `POST /admin/users` creating `system_admin` | hospital_supervisor | 403 (role hierarchy) |
 | QA-905 | `POST /admin/users/{id}/reset-password` | hospital_supervisor | 403 |
 | QA-906 | `POST /work-orders/{id}/lock` then transition by another user | resident locks, cr tries | documents lock-DoS behaviour |
@@ -293,6 +293,6 @@ Evidence: `docs/qa/evidence/QA-###-<step>.png` — see [evidence/README.md](evid
 |---|---|
 | DEF-001, DEF-002, DEF-003, DEF-004, DEF-006 | **FIXED in code + verified on local sandbox API** (not yet in the user's Codespace) |
 | SEC-002, SEC-003, SEC-004, SEC-006, SEC-008, SEC-009 | **FIXED in code + verified on local sandbox API** (not yet in the user's Codespace) |
-| DEF-005 / SEC-005, SEC-001, DB-001, DB-002, DB-003, DB-005, SEC-011 | Still open; need a user decision or migration (see [project-memory.md](../project-memory.md)) |
+| SEC-001, DB-001, DB-002, DB-003, DB-005, SEC-011 | Still open; need a user decision or migration (see [project-memory.md](../project-memory.md)) |
 
-Open question: visibility rule for residents/departments (blocks DEF-005 retest design).
+DEF-005 / SEC-005 (request visibility) is fixed under provisional role rules; the product owner should confirm them, especially the department rule and the `other` role. Isolation was verified on an isolated two-tenant throwaway database, not in the user's Codespace.
