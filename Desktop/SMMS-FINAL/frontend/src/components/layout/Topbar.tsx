@@ -199,15 +199,13 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
 
         {/* User Menu */}
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-2">
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="gap-2" />}>
               <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-bold">
                 {user?.fullName?.charAt(0) || 'U'}
               </div>
               <span className="text-xs font-medium hidden sm:block max-w-[120px] truncate">
                 {user?.fullName}
               </span>
-            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={lang === 'ar' ? 'start' : 'end'} className="w-52">
             <div className="px-3 py-2">

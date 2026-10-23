@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { User } from '@/lib/types';
+import { authApi } from '@/lib/api';
 
 interface AuthState {
   user: User | null;
@@ -7,6 +8,7 @@ interface AuthState {
   lang: 'ar' | 'en';
   setAuth: (user: User, token: string) => void;
   logout: () => void;
+  clearPasswordChangeRequired: () => void;
   setLang: (lang: 'ar' | 'en') => void;
   init: () => void;
 }
@@ -45,9 +47,21 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    // Axios runs request interceptors asynchronously, so pass the token explicitly instead of
+    // relying on storage that is cleared right below.
+    authApi.logout(localStorage.getItem('smms_token')).catch(() => {});
     localStorage.removeItem('smms_token');
     localStorage.removeItem('smms_user');
     set({ user: null, token: null });
+  },
+
+  clearPasswordChangeRequired: () => {
+    set((state) => {
+      if (!state.user) return state;
+      const user = { ...state.user, passwordChangeRequired: false };
+      localStorage.setItem('smms_user', JSON.stringify(user));
+      return { user };
+    });
   },
 
   setLang: (lang) => {

@@ -195,7 +195,7 @@ export const t = {
 } as const;
 
 export type Lang = 'ar' | 'en';
-export type Translations = typeof t.ar;
+export type Translations = Record<keyof typeof t.ar, string>;
 
 export function useT(lang: Lang): Translations {
   return t[lang];
