@@ -144,7 +144,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="lg:hidden text-white/60 hover:text-white">
+          <button type="button" onClick={onClose} aria-label={lang === 'ar' ? 'إغلاق القائمة' : 'Close menu'} className="lg:hidden text-white/60 hover:text-white">
             <X size={18} />
           </button>
         </div>

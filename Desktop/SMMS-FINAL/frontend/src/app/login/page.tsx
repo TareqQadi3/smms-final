@@ -63,8 +63,9 @@ export default function LoginPage() {
     >
       {/* Lang Toggle */}
       <button
+        type="button"
         onClick={() => setLang(isAr ? 'en' : 'ar')}
-        className="absolute top-4 right-4 flex items-center gap-1.5 text-white/70 hover:text-white text-sm bg-white/10 px-3 py-1.5 rounded-full transition"
+        className="absolute top-4 right-4 flex items-center gap-1.5 text-white/70 hover:text-white text-sm bg-white/10 px-3 py-1.5 rounded-full transition outline-none focus-visible:ring-2 focus-visible:ring-white/80"
       >
         <Globe size={14} />
         {isAr ? 'English' : 'عربي'}
@@ -126,7 +127,9 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className={`absolute top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 ${isAr ? 'left-3' : 'right-3'}`}
+                  aria-label={showPass ? (isAr ? 'إخفاء كلمة المرور' : 'Hide password') : (isAr ? 'إظهار كلمة المرور' : 'Show password')}
+                  aria-pressed={showPass}
+                  className={`absolute top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50 ${isAr ? 'left-3' : 'right-3'}`}
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>

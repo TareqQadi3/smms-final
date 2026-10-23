@@ -96,7 +96,9 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
       {/* Left */}
       <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={onMenuClick}
+          aria-label={lang === 'ar' ? 'فتح القائمة' : 'Open menu'}
           className="lg:hidden p-1.5 rounded-md hover:bg-accent text-muted-foreground"
         >
           <Menu size={20} />
@@ -113,7 +115,7 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
         <ThemeSwitcher />
 
         {/* Language */}
-        <Button variant="ghost" size="sm" onClick={toggleLang} className="gap-1.5 text-xs font-medium">
+        <Button variant="ghost" size="sm" onClick={toggleLang} aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'} className="gap-1.5 text-xs font-medium">
           <Globe size={15} />
           {lang === 'ar' ? 'EN' : 'عربي'}
         </Button>
@@ -126,6 +128,7 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             className="relative"
             onClick={() => setNotifOpen(o => !o)}
             aria-label={lang === 'ar' ? 'الإشعارات' : 'Notifications'}
+            aria-expanded={notifOpen}
           >
             <Bell size={17} />
             {unreadCount > 0 && (

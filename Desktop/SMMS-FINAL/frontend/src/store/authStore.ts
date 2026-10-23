@@ -11,6 +11,12 @@ interface AuthState {
   init: () => void;
 }
 
+function applyDocLang(lang: 'ar' | 'en') {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = lang;
+  document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
@@ -21,6 +27,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const token = localStorage.getItem('smms_token');
       const userStr = localStorage.getItem('smms_user');
       const lang = (localStorage.getItem('smms_lang') as 'ar' | 'en') || 'ar';
+      applyDocLang(lang);
       if (token && userStr) {
         try {
           set({ token, user: JSON.parse(userStr), lang });
@@ -45,6 +52,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setLang: (lang) => {
     localStorage.setItem('smms_lang', lang);
+    applyDocLang(lang);
     set({ lang });
   },
 }));
