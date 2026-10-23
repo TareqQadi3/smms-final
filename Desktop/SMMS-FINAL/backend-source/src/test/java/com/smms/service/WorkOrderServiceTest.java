@@ -1,5 +1,8 @@
 package com.smms.service;
 
+import com.smms.workflow.WorkOrderHistoryWriter;
+import com.smms.repository.ControlRoomRepository;
+import com.smms.repository.AssetRepository;
 import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.dto.request.TransitionRequest;
 import com.smms.entity.*;
@@ -61,7 +64,8 @@ class WorkOrderServiceTest {
         userRepo = mock(UserRepository.class);
         service = new WorkOrderService(workOrderRepo, historyRepo, workflowEngine,
             notificationService, mapper, mock(PlanEnforcementService.class),
-            tenantSecurity, accessPolicy, em, userRepo);
+            tenantSecurity, accessPolicy, em, userRepo,
+            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class));
         when(mapper.toResponse(any(WorkOrder.class))).thenAnswer(i -> com.smms.dto.response.WorkOrderResponse.builder().build());
         // create() also looks for duplicate candidates; default to none
         when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());

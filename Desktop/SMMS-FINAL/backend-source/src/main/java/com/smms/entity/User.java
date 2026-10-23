@@ -25,6 +25,11 @@ public class User extends BaseEntity implements UserDetails {
     @JoinColumn(name = "center_id")
     private Center center;
 
+    /** Link to a real department row (V13); the free-text department_* columns stay as display fallback. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
     @Column(nullable = false, unique = true, length = 100)
     private String username;
 

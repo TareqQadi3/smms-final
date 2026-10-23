@@ -12,7 +12,18 @@ public interface WorkOrderMapper {
     @Mapping(target = "center",      source = "center")
     @Mapping(target = "controlRoom", source = "controlRoom")
     @Mapping(target = "possibleDuplicates", ignore = true)
+    @Mapping(target = "assetId",      source = "asset.id")
+    @Mapping(target = "asset",        source = "asset")
+    @Mapping(target = "departmentId", source = "department.id")
+    @Mapping(target = "emergency",    source = "emergency")
+    @Mapping(target = "slaPaused",    expression = "java(wo.getSlaPausedAt() != null)")
+    // computed by the workflow module (escalation rows), not a work_orders column
+    @Mapping(target = "escalationLevel", ignore = true)
     WorkOrderResponse toResponse(WorkOrder wo);
+
+    // assetCode is mapped when the asset register columns exist (V40)
+    @Mapping(target = "assetCode", ignore = true)
+    AssetRef toAssetRef(Asset asset);
 
     @Mapping(target = "id",       source = "id")
     @Mapping(target = "username", source = "username")

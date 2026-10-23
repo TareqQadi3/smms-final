@@ -22,6 +22,9 @@
     <jjwt.version>0.12.5</jjwt.version>
     <mapstruct.version>1.5.5.Final</mapstruct.version>
     <lombok.version>1.18.32</lombok.version>
+    <!-- DB-backed integration tests (@Tag("db")) are skipped by default; run them with -Pit -->
+    <test.groups></test.groups>
+    <test.excluded.groups>db</test.excluded.groups>
   </properties>
 
   <dependencies>
@@ -89,6 +92,20 @@
         </configuration>
       </plugin>
       <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- *IT classes are database tests: always discovered, excluded by tag unless -Pit -->
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/*Tests.java</include>
+            <include>**/*IT.java</include>
+          </includes>
+          <groups>${test.groups}</groups>
+          <excludedGroups>${test.excluded.groups}</excludedGroups>
+        </configuration>
+      </plugin>
+      <plugin>
         <groupId>org.jacoco</groupId>
         <artifactId>jacoco-maven-plugin</artifactId>
         <version>0.8.12</version>
@@ -105,4 +122,18 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      mvn -Pit test  runs ONLY the @Tag("db") tests, against a throwaway PostgreSQL named by
+      SMMS_IT_DB_URL / SMMS_IT_DB_USER / SMMS_IT_DB_PASSWORD (see docs/db-integration-tests.md).
+    -->
+    <profile>
+      <id>it</id>
+      <properties>
+        <test.groups>db</test.groups>
+        <test.excluded.groups></test.excluded.groups>
+      </properties>
+    </profile>
+  </profiles>
 </project>

@@ -46,6 +46,25 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, "The request conflicts with existing data");
     }
 
+    // ── Concurrency: lost updates and lock waits are retryable conflicts, never a 500 ──
+
+    /** @Version mismatch on a work order (or any versioned row): someone else changed it first. */
+    @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+                       jakarta.persistence.OptimisticLockException.class})
+    public ResponseEntity<ErrorBody> optimisticLock(Exception e) {
+        log.warn("Optimistic lock failure: {}", e.getClass().getSimpleName());
+        return error(HttpStatus.CONFLICT, "The record was modified concurrently, reload and try again");
+    }
+
+    /** Lock wait timeout, deadlock victim, cannot acquire lock: safe to retry (same Idempotency-Key). */
+    @ExceptionHandler({org.springframework.dao.PessimisticLockingFailureException.class,
+                       jakarta.persistence.PessimisticLockException.class,
+                       jakarta.persistence.LockTimeoutException.class})
+    public ResponseEntity<ErrorBody> lockBusy(Exception e) {
+        log.warn("Lock contention: {}", e.getClass().getSimpleName());
+        return error(HttpStatus.CONFLICT, "The system is busy, retry in a moment");
+    }
+
     /** Wrong HTTP verb on an existing path is a client error, not a server fault. */
     @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ErrorBody> methodNotAllowed(org.springframework.web.HttpRequestMethodNotSupportedException e) {

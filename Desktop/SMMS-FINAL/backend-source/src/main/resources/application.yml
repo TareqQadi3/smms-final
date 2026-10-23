@@ -18,6 +18,11 @@ spring:
     # Fail fast: a mistyped file name or a missing location must stop startup, never be skipped.
     validate-migration-naming: true
     fail-on-missing-locations: true
+  task:
+    scheduling:
+      # several scheduled jobs (SLA, cleanup, program jobs): a single thread would let one block the rest
+      pool:
+        size: 4
   data:
     web:
       pageable:

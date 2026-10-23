@@ -1,5 +1,8 @@
 package com.smms.service;
 
+import com.smms.workflow.WorkOrderHistoryWriter;
+import com.smms.repository.ControlRoomRepository;
+import com.smms.repository.AssetRepository;
 import com.smms.dto.response.DuplicateCandidateResponse;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.*;
@@ -57,7 +60,8 @@ class WorkOrderWorkflowM3Test {
         when(mapper.toResponse(any(WorkOrder.class))).thenAnswer(i -> WorkOrderResponse.builder().build());
         service = new WorkOrderService(workOrderRepo, historyRepo, new WorkflowEngine(), notificationService,
             mapper, mock(PlanEnforcementService.class), tenantSecurity, accessPolicy,
-            mock(EntityManager.class), mock(UserRepository.class));
+            mock(EntityManager.class), mock(UserRepository.class),
+            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class));
         when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
     }
 
