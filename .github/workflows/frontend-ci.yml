@@ -33,6 +33,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests (vitest)
+        run: npm test
+
+      # Playwright e2e (npm run test:e2e) stays local-only: it needs the pre-installed
+      # browsers in /opt/pw-browsers and is not run on GitHub-hosted runners.
+
       # next.config.mjs has type-checking and ESLint enabled during the build.
       - name: Build
         run: npm run build
