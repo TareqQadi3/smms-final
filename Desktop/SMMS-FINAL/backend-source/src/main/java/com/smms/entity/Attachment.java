@@ -36,6 +36,10 @@ public class Attachment {
     @Column(name = "mime_type", length = 100)
     private String mimeType;
 
+    /** Idempotent upload request that created this row (null for uploads without Idempotency-Key). */
+    @Column(name = "upload_request_id")
+    private UUID uploadRequestId;
+
     /** Defence in depth: always the tenant of the parent, derived in {@link #deriveTenant()}. */
     @Column(name = "tenant_id", updatable = false)
     private UUID tenantId;
