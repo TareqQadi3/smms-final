@@ -15,6 +15,9 @@ spring:
     validate-on-migrate: true
     out-of-order: false
     clean-disabled: true
+    # Fail fast: a mistyped file name or a missing location must stop startup, never be skipped.
+    validate-migration-naming: true
+    fail-on-missing-locations: true
   data:
     web:
       pageable:
