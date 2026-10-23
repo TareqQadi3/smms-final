@@ -6,6 +6,22 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 log() { echo "[smms-setup] $*"; }
 
+# ── Deployment guard (reversible: revert this block and the devcontainer flag) ─────────────
+# --auto              automatic start (devcontainer postStartCommand): never deploys changed code
+#                     over an existing database; it only starts the already-built stack.
+# --backup-file PATH  a dump created by scripts/backup-db.sh (needs PATH.verified, < 24 h old).
+# SMMS_ALLOW_UNBACKED_DEPLOY=1  explicit override for throwaway/dev databases only.
+AUTO_MODE=0
+BACKUP_FILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --auto) AUTO_MODE=1; shift ;;
+    --backup-file) BACKUP_FILE="${2:-}"; shift 2 || { echo "--backup-file needs a path" >&2; exit 2; } ;;
+    -h|--help) sed -n '/^# ── Deployment guard/,/^# SMMS_ALLOW_UNBACKED_DEPLOY/p' "$0"; exit 0 ;;
+    *) echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
+  esac
+done
+
 log "Waiting for Docker..."
 for _ in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done
 docker info >/dev/null 2>&1 || { log "ERROR: Docker is not available"; exit 1; }
@@ -64,6 +80,43 @@ abort_existing_volume() {
   exit 1
 }
 
+# ── Guard: never migrate/deploy over an existing database without a verified backup ────────
+DEPLOY_MARKER=".smms-deployed-commit"   # untracked; records the commit last deployed by this script
+
+current_commit() { git rev-parse HEAD 2>/dev/null || echo "unknown"; }
+
+backup_is_verified() {  # backup_is_verified FILE -> 0 only for a fresh, checksum-matching verified backup
+  local f="$1" m="$1.verified" want got
+  [ -n "$f" ] && [ -s "$f" ] && [ -s "$m" ] || return 1
+  find "$m" -mmin -1440 2>/dev/null | grep -q . || return 1
+  want="$(sed -n 's/^sha256=//p' "$m" | head -1)"
+  got="$(sha256sum "$f" | cut -d' ' -f1)"
+  [ -n "$want" ] && [ "$want" = "$got" ]
+}
+
+if db_volume_exists; then
+  deployed="$(cat "$DEPLOY_MARKER" 2>/dev/null || echo none)"
+  if [ "$(current_commit)" != "$deployed" ]; then
+    if [ "$AUTO_MODE" = "1" ]; then
+      log "GUARD: an existing database was found and the code changed since the last deployment."
+      log "GUARD: automatic start will NOT build or migrate. Starting the existing stack as it is."
+      log "GUARD: to deploy: bash scripts/backup-db.sh, then: bash setup.sh --backup-file <dump>"
+      docker compose up -d --no-build || log "GUARD: no prebuilt images; run the manual steps above."
+      exit 0
+    elif [ "${SMMS_ALLOW_UNBACKED_DEPLOY:-0}" = "1" ]; then
+      log "WARNING: SMMS_ALLOW_UNBACKED_DEPLOY=1 - deploying over an existing database WITHOUT a verified backup."
+    elif backup_is_verified "$BACKUP_FILE"; then
+      log "Verified backup accepted: $(basename "$BACKUP_FILE")"
+    else
+      log "ERROR: refusing to deploy. An existing database volume was found and no fresh verified backup was given."
+      log "  1) bash scripts/backup-db.sh        (creates, verifies and rehearses a restore)"
+      log "  2) bash setup.sh --backup-file <the .dump path it prints>"
+      log "Nothing was changed."
+      exit 1
+    fi
+  fi
+fi
+
 if [ ! -f .env ]; then
   if db_volume_exists; then abort_existing_volume; fi
   log "Creating .env from .env.codespaces with freshly generated secrets"
@@ -94,6 +147,8 @@ unset jwt_now
 
 log "Building and starting services (first run takes several minutes)..."
 docker compose up -d --build
+# nginx reads its bind-mounted config only at start; compose does not recreate it when only the file changed
+docker compose restart nginx >/dev/null 2>&1 || true
 
 log "Waiting for backend health..."
 for _ in $(seq 1 90); do
@@ -111,5 +166,6 @@ if ! docker exec smms_backend wget -qO- http://localhost:8080/actuator/health 2>
 fi
 
 code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/login || true)
+printf '%s\n' "$(current_commit)" > "$DEPLOY_MARKER"
 log "Backend: UP | Login page via nginx: HTTP $code"
 log "Open the PORTS tab and use the address for port 80 (SMMS App)."

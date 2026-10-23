@@ -128,3 +128,8 @@ Hard tasks: plan with Opus 5.5 only, execute with Sonnet 5.5 only, verify the mo
 - Done on branch: Flyway V1-V12, tenant diagnostics (read-only), session store with refresh rotation/logout revocation, WebSocket tickets, attachment download, upload idempotency, 401 entry point, default-admin protection, TypeScript errors fixed, frontend CI. Evidence: work-log Entry 10.
 - Still open: department link (design only), wrong-tenant row correction (manual, owner decision), V1 `sysadmin` default password, one-replica limit for WS tickets, nginx query-string logging, action SHA pinning, inventory/purchasing, technician mobile app.
 - Deploy only via security/deployment-runbook.md; the Codespace has never been touched by Claude.
+
+## Pre-deployment safety (branch claude/pre-deploy-safety, 2026-10-24)
+- setup.sh deployment guard + `scripts/backup-db.sh` + devcontainer `--auto`: no automatic migration over an existing DB. nginx logs no query strings and `/ws/` rejects queries. Runbook rewritten (security/deployment-runbook.md). Work-log Entry 11.
+- A Codespace that has not pulled the guard has no protection: take the verified backup BEFORE pulling.
+- Actions history: only Backend Tests ever ran (last on PR #2, 85920af); Secret Scan and Frontend CI never ran.

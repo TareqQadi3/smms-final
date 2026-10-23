@@ -5,7 +5,7 @@
     "cpus": 2,
     "memory": "8gb"
   },
-  "postStartCommand": "bash Desktop/SMMS-FINAL/setup.sh",
+  "postStartCommand": "bash Desktop/SMMS-FINAL/setup.sh --auto",
   "forwardPorts": [80],
   "portsAttributes": {
     "80": {
