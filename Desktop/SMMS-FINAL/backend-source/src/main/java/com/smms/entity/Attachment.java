@@ -2,12 +2,14 @@ package com.smms.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.extern.slf4j.Slf4j;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity @Table(name = "attachments")
+@Slf4j
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Attachment {
 
@@ -34,7 +36,21 @@ public class Attachment {
     @Column(name = "mime_type", length = 100)
     private String mimeType;
 
+    /** Defence in depth: always the tenant of the parent, derived in {@link #deriveTenant()}. */
+    @Column(name = "tenant_id", updatable = false)
+    private UUID tenantId;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false)
     private Instant createdAt;
+
+    @PrePersist
+    void deriveTenant() {
+        UUID parent = workOrder != null ? workOrder.getTenantId() : null;
+        if (tenantId != null && parent != null && !tenantId.equals(parent)) {
+            throw new IllegalStateException("attachment tenant differs from its work order tenant");
+        }
+        if (tenantId == null) tenantId = parent;
+        if (tenantId == null) log.warn("attachment row has no tenant: its work order has none (legacy data)");
+    }
 }

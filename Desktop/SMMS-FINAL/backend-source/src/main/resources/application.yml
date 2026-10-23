@@ -3,6 +3,18 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   jpa:
     open-in-view: false
+  # Schema migrations. Databases created by the docker entrypoint (scripts/init.sql + V2) have no
+  # flyway_schema_history, so Flyway baselines them at version 2 and applies V3+ only.
+  # clean is disabled: it would drop the whole schema.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: "2"
+    baseline-description: entrypoint init.sql+V2
+    validate-on-migrate: true
+    out-of-order: false
+    clean-disabled: true
   data:
     web:
       pageable:
