@@ -9,6 +9,7 @@ Acceptance criteria:
 3. Flyway reports V1..V8 applied on the Codespace DB; any V6 deferred NOT NULL/CHECK follow-up (F-A1) cleared after the tenant-less work orders are fixed.
 4. DONE on `claude/security-phase-4`: attachment download, upload Idempotency-Key, refresh rotation + logout revocation, browser WebSocket tickets. Remaining: push after DB commit, Redis-backed ticket store for multiple replicas.
 7. Seed the 15 test accounts only with explicit authorization; start the QA campaign (`qa/test-plan.md`).
+8. Deployment follows `security/deployment-runbook.md` (pull, verified backup downloaded off the Codespace, `setup.sh --backup-file`). Pin GitHub Actions to commit SHAs; optional login block until the default admin password is changed.
 
 ## Planned: Technician mobile app (separate milestone, not started)
 Dedicated app for field technicians on the existing backend (no second backend). Contract: `mobile-technician-api.md`. Backend prerequisites (download, idempotency, rotation, WS tickets) exist on `claude/security-phase-4`; the client must single-flight refresh.

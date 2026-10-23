@@ -133,3 +133,8 @@ Hard tasks: plan with Opus 5.5 only, execute with Sonnet 5.5 only, verify the mo
 - setup.sh deployment guard + `scripts/backup-db.sh` + devcontainer `--auto`: no automatic migration over an existing DB. nginx logs no query strings and `/ws/` rejects queries. Runbook rewritten (security/deployment-runbook.md). Work-log Entry 11.
 - A Codespace that has not pulled the guard has no protection: take the verified backup BEFORE pulling.
 - Actions history: only Backend Tests ever ran (last on PR #2, 85920af); Secret Scan and Frontend CI never ran.
+
+## Consolidated pre-deployment state (branch claude/pre-deploy-final, 2026-10-24)
+- Guard is fail-closed and state-hash based; `--auto` only runs `docker compose start`. Backup verifies all public tables and requires the uploads archive. Runbook order: pull (deploys nothing) -> backup -> `setup.sh --backup-file`. Work-log Entry 12.
+- Real GitHub Actions results recorded in Entry 12: Secret Scan, Backend Tests and Frontend CI all succeeded on `f78c70f`.
+- `gh codespace` is not usable from the Claude session (403). Codespace-only checks are a checklist in Entry 12.
