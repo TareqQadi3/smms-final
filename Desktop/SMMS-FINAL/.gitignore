@@ -1,0 +1,20 @@
+# Environment secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker runtime
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
