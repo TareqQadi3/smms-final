@@ -1,40 +1,38 @@
 #!/bin/bash
-# One-command startup for GitHub Codespaces
-# Run from anywhere: bash /workspaces/smms-final/Desktop/SMMS-FINAL/setup.sh
+# Starts the full SMMS stack. Safe to re-run: keeps existing data volumes.
+# Runs automatically in GitHub Codespaces (see /.devcontainer/devcontainer.json).
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
-set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+log() { echo "[smms-setup] $*"; }
 
-echo "=== SMMS Codespace Setup ==="
+log "Waiting for Docker..."
+for _ in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done
+docker info >/dev/null 2>&1 || { log "ERROR: Docker is not available"; exit 1; }
 
-# Ensure on the correct branch
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
-if [ "$BRANCH" != "claude/smms-browser-test-setup" ]; then
-  echo "Switching to claude/smms-browser-test-setup..."
-  git fetch origin claude/smms-browser-test-setup
-  git checkout claude/smms-browser-test-setup
-  git pull origin claude/smms-browser-test-setup
-fi
-
-# Copy env file if not present
 if [ ! -f .env ]; then
-  echo "Creating .env from .env.codespaces..."
+  log "Creating .env from .env.codespaces (temporary test credentials)"
   cp .env.codespaces .env
 fi
 
-# Start all services
-echo "Starting Docker services (first run downloads images and builds — ~5 minutes)..."
+log "Building and starting services (first run takes several minutes)..."
 docker compose up -d --build
 
-echo ""
-echo "=== Services starting. Checking health in 90 seconds... ==="
-sleep 90
+log "Waiting for backend health..."
+for _ in $(seq 1 90); do
+  if docker exec smms_backend wget -qO- http://localhost:8080/actuator/health 2>/dev/null | grep -q '"UP"'; then
+    break
+  fi
+  sleep 4
+done
 
 docker compose ps
-echo ""
-echo "Testing backend health..."
-docker exec smms_backend wget -qO- http://localhost:8080/actuator/health 2>/dev/null && echo " — UP" || echo " — still starting (may need 1 more minute)"
-echo ""
-echo "=== Setup complete ==="
-echo "Go to the PORTS tab in VS Code, find port 80, and copy its forwarded URL."
+if ! docker exec smms_backend wget -qO- http://localhost:8080/actuator/health 2>/dev/null | grep -q '"UP"'; then
+  log "ERROR: backend did not become healthy. Last log lines:"
+  docker logs --tail 40 smms_backend
+  exit 1
+fi
+
+code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/login || true)
+log "Backend: UP | Login page via nginx: HTTP $code"
+log "Open the PORTS tab and use the address for port 80 (SMMS App)."
