@@ -260,7 +260,7 @@ public class WorkOrderService {
         }
         User tech = tenantSecurity.requireUser(technicianId, UserRole.technician);
         // A technician can only be assigned inside the ticket's own center; otherwise behave as unknown
-        if (tech.getCenter() == null || wo.getCenter() == null
+        if (!tech.isActive() || tech.getCenter() == null || wo.getCenter() == null
                 || !tech.getCenter().getId().equals(wo.getCenter().getId())) {
             throw new ResourceNotFoundException("User not found");
         }

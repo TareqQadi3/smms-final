@@ -338,6 +338,22 @@ class WorkOrderServiceTest {
     }
 
     @Test
+    void assignRejectsInactiveTechnicianOfSameCenter() {
+        UUID id = UUID.randomUUID();
+        User actor = user(UserRole.control_room);
+        Center c = center();
+        underReviewIn(c, id, actor);
+        User tech = user(UserRole.technician);
+        tech.setCenter(c);
+        tech.setActive(false);
+        when(tenantSecurity.requireUser(tech.getId(), UserRole.technician)).thenReturn(tech);
+
+        assertThatThrownBy(() -> service.assign(id, tech.getId(), "n", actor))
+            .isInstanceOf(ResourceNotFoundException.class);
+        verify(workOrderRepo, never()).save(any());
+    }
+
+    @Test
     void assignAllowsTechnicianOfSameCenter() {
         UUID id = UUID.randomUUID();
         User actor = user(UserRole.control_room);

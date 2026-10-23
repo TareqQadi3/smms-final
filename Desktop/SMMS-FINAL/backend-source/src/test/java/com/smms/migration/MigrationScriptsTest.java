@@ -47,7 +47,8 @@ class MigrationScriptsTest {
     void versionsAreContiguousAndPresent() {
         for (String f : List.of("V1__init.sql", "V2__schema_migration.sql", "V3__user_role_other.sql",
                 "V4__tenant_backfill_parents.sql", "V5__child_tenant_backfill.sql",
-                "V6__child_tenant_constraints.sql")) {
+                "V6__child_tenant_constraints.sql", "V7__default_tenant_seed_hierarchy.sql",
+                "V8__username_case_insensitive_unique.sql")) {
             assertThat(MigrationScriptsTest.class.getResource("/db/migration/" + f)).as(f).isNotNull();
         }
     }
@@ -65,10 +66,24 @@ class MigrationScriptsTest {
     @Test
     void migrationsAreTransactionalAndNeverDestructive() throws Exception {
         for (String f : List.of("V3__user_role_other.sql", "V4__tenant_backfill_parents.sql",
-                "V5__child_tenant_backfill.sql", "V6__child_tenant_constraints.sql")) {
+                "V5__child_tenant_backfill.sql", "V6__child_tenant_constraints.sql",
+                "V7__default_tenant_seed_hierarchy.sql", "V8__username_case_insensitive_unique.sql")) {
             String sql = new String(resource(f)).toLowerCase();
             assertThat(sql).as(f).doesNotContain("drop table").doesNotContain("truncate")
                 .doesNotContain("delete from").doesNotContain("concurrently");
+        }
+    }
+
+    @Test
+    void seedTenantMigrationOnlyTouchesFixedSeedIdsWhereTenantIsNull() throws Exception {
+        String sql = new String(resource("V7__default_tenant_seed_hierarchy.sql")).toLowerCase();
+        assertThat(sql).contains("11111111-1111-1111-1111-111111111111")
+            .contains("22222222-2222-2222-2222-222222222222");
+        for (String stmt : sql.split(";")) {
+            if (stmt.contains("update ")) {
+                assertThat(stmt).contains("tenant_id is null");
+                assertThat(stmt.contains("'11111111-1111") || stmt.contains("'22222222-2222")).isTrue();
+            }
         }
     }
 }
