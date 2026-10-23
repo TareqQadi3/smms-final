@@ -52,3 +52,10 @@ Chronological. Facts only; secrets never recorded. See [project-memory.md](proje
 - Tests actually run: `mvn test` 258 tests, 0 failures (baseline 187). Isolated two-tenant throwaway stack (own compose project, own ports, temporary storage): 222/223 probes passed; the 1 miss was a wrong probe expectation (technician filter forced to self, nothing widened). Cross-tenant, cross-center, cross-region and same-center isolation were tested there.
 - Not done / still open: SEC-A, SEC-B, SEC-C, SEC-D, SEC-H, SEC-I (see project-memory.md); not deployed to the user's Codespace; seeding and QA campaign not started; frontend unchanged.
 - Next step: user pulls the branch into the Codespace (see final report), then authorizes seeding.
+
+## Entry 8 — Security phase 2 (branch `claude/security-phase-2`, base `85920af`)
+- Planned by claude-opus-5-5, implemented by claude-sonnet-5-5 (both self-reported by the agents).
+- Fixed: SEC-A (new records get tenant immediately; tenant-less non-admin users refused at login/JWT), SEC-B (user list scoped; new `assignable-technicians` endpoint replaces the picker's use of the user list), SEC-C/D (`AdminScopePolicy`: rank + center/region/room scope on users, centers, rooms, regions), SEC-001 (bulk import tenant-scoped, validated, all-or-nothing), SEC-H (`PageRequests`: size<=100, page>=0, sort whitelist), SEC-I (Tenant DTOs).
+- Verified: 483 backend unit tests, 0 failures (baseline 258); throwaway single-Postgres probe in the sandbox. NOT verified in the user's Codespace; NOT browser-tested.
+- Not implemented (proposals only): `security/phase2-proposals.md` (tenant_id on history/attachments/notifications, department link, Flyway + CHECKs, JWT rotation).
+- Deploy note: users created earlier with a NULL tenant cannot log in until the app restarts once (DataInitializer derives the tenant from their center/region/room, or the single tenant). Users it cannot derive stay locked out by design.

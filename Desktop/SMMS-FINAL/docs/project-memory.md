@@ -112,3 +112,9 @@ Stopping point: audits done, fixes committed and pushed, docs written; UI work (
 
 ## 14. Workflow preference
 Hard tasks: plan with Opus 5.5 only, execute with Sonnet 5.5 only, verify the model actually used; see `CLAUDE.md` section 6.
+
+
+## Security phase 2 status (branch claude/security-phase-2)
+- Fixed on branch: SEC-A, SEC-B, SEC-C, SEC-D, SEC-H, SEC-I, SEC-001.
+- Still open: DB-001 (tenant_id on history/attachments/notifications), DB-002 (no migration tool), DB-005 (no CHECKs), department link, SEC-011 (committed test JWT secret — rotate before real use). Plans in docs/security/phase2-proposals.md.
+- Roadmap gaps (not security): stock deduction, procurement, return-for-info, escalation, duplicate detection.
