@@ -41,6 +41,9 @@ public class CreateUserRequest {
     private UserRole role;
 
     private UUID regionId;
+
+    /** Platform admin only, when no center/region/control room fixes the tenant. Ignored otherwise. */
+    private UUID tenantId;
     private UUID centerId;
     private UUID controlRoomId;         // primary control room link
     private List<UUID> controlRoomIds;  // multiple control rooms

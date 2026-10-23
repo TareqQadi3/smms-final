@@ -8,7 +8,11 @@ import com.smms.enums.UserRole;
 import com.smms.exception.ResourceNotFoundException;
 import com.smms.mapper.UserMapper;
 import com.smms.repository.*;
+import com.smms.repository.UserSpecs;
+import com.smms.security.AdminScopePolicy;
 import com.smms.security.TenantSecurityService;
+import com.smms.security.AdminScopePolicy.UserListScope;
+import org.springframework.security.access.AccessDeniedException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -18,6 +22,8 @@ import com.smms.util.InputSanitizer;
 import com.smms.util.TenantContext;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -42,10 +48,61 @@ public class UserService {
     private final UserMapper mapper;
     private final PlanEnforcementService planEnforcement;
     private final TenantSecurityService tenantSecurity;
+    private final AdminScopePolicy policy;
 
     public UserResponse create(CreateUserRequest req, User actor) {
-        // ── Plan limit enforcement ─────────────────────────────
-        planEnforcement.checkUserLimit();
+        // ── Role hierarchy first: a forbidden role is 403 whatever the ids say ──
+        policy.assertCanAssignRole(actor, req.getRole());
+        boolean platformRole = req.getRole() == UserRole.system_admin;
+        boolean actorIsAdmin = actor == null || actor.getRole() == UserRole.system_admin;
+
+        // ── Resolve and scope-check every referenced object (404 when outside the actor's scope) ──
+        UUID centerId = req.getCenterId();
+        if (centerId == null && actor != null && actor.getRole() == UserRole.hospital_supervisor) {
+            // A hospital supervisor always works inside their own center
+            centerId = actor.getCenter() != null ? actor.getCenter().getId() : null;
+        }
+        Center center = null;
+        if (centerId != null) {
+            center = tenantSecurity.requireCenter(centerId);
+            policy.assertCenterInScope(actor, center);
+        }
+        Region region = null;
+        if (req.getRegionId() != null) {
+            region = tenantSecurity.requireRegion(req.getRegionId());
+            policy.assertRegionInScope(actor, region);
+        }
+
+        // ── Validate required links per role ───────────────────
+        if (!actorIsAdmin && center == null) {
+            // Scoped creators can only create users that live inside their scope
+            throw new IllegalArgumentException("Center is required");
+        }
+        validateLinks(req.getRole(), center, region);
+
+        List<ControlRoom> rooms = new ArrayList<>();
+        java.util.Set<UUID> crIds = new LinkedHashSet<>();
+        if (req.getControlRoomId()  != null) crIds.add(req.getControlRoomId());
+        if (req.getControlRoomIds() != null) crIds.addAll(req.getControlRoomIds());
+        for (UUID crId : crIds) {
+            ControlRoom cr = tenantSecurity.requireControlRoom(crId);
+            policy.assertControlRoomInScope(actor, cr);
+            assertRoomMatchesUserCenter(actor, center, cr);
+            rooms.add(cr);
+        }
+
+        // ── Tenant: derived from the parents, never null for a tenant user ──
+        UUID tenantId = null;
+        if (!platformRole) {
+            List<BaseEntity> anchors = new ArrayList<>();
+            anchors.add(center);
+            anchors.add(region);
+            anchors.addAll(rooms);
+            tenantId = policy.resolveTenantForNewEntity(req.getTenantId(), anchors.toArray(new BaseEntity[0]));
+        }
+
+        // ── Plan limit (of the tenant the user is really created in) ──
+        planEnforcement.checkUserLimit(tenantId, 1);
 
         // ── Duplicate checks ───────────────────────────────────
         if (userRepo.existsByUsernameAndDeletedAtIsNull(req.getUsername())) {
@@ -54,17 +111,6 @@ public class UserService {
         if (StringUtils.hasText(req.getEmail())
                 && userRepo.existsByEmailAndDeletedAtIsNull(req.getEmail())) {
             throw new IllegalArgumentException("Email already exists: " + req.getEmail());
-        }
-
-        // ── Role-hierarchy enforcement ─────────────────────────
-        validateRoleAssignment(req.getRole(), actor);
-
-        // ── Validate required links per role ───────────────────
-        if (REGION_ROLES.contains(req.getRole()) && req.getRegionId() == null) {
-            throw new IllegalArgumentException("Region is required for role: " + req.getRole());
-        }
-        if (CENTER_ROLES.contains(req.getRole()) && req.getCenterId() == null) {
-            throw new IllegalArgumentException("Center is required for role: " + req.getRole());
         }
 
         // ── Build user ─────────────────────────────────────────
@@ -95,22 +141,13 @@ public class UserService {
             .jobTitle(InputSanitizer.clean(req.getJobTitle(), 200))
             .build();
 
-        if (req.getCenterId() != null) {
-            user.setCenter(tenantSecurity.requireCenter(req.getCenterId()));
-        }
-        if (req.getRegionId() != null) {
-            user.setRegion(tenantSecurity.requireRegion(req.getRegionId()));
-        }
-
-        user.setTenantId(TenantContext.get());
+        user.setCenter(center);
+        user.setRegion(region);
+        user.setTenantId(tenantId);
         User saved = userRepo.save(user);
 
         // ── Auto-link control rooms ────────────────────────────
-        java.util.Set<java.util.UUID> crIds = new java.util.LinkedHashSet<>();
-        if (req.getControlRoomId()  != null) crIds.add(req.getControlRoomId());
-        if (req.getControlRoomIds() != null) crIds.addAll(req.getControlRoomIds());
-        for (java.util.UUID crId : crIds) {
-            ControlRoom cr = tenantSecurity.requireControlRoom(crId);
+        for (ControlRoom cr : rooms) {
             if (!accessRepo.existsByUserIdAndControlRoomId(saved.getId(), cr.getId())) {
                 accessRepo.save(UserControlRoomAccess.builder()
                     .user(saved).controlRoom(cr).build());
@@ -120,42 +157,17 @@ public class UserService {
         return mapper.toResponse(saved);
     }
 
-    private static final Set<UserRole> REGION_INVISIBLE_ROLES = Set.of(
-        UserRole.system_admin, UserRole.region_supervisor
-    );
-
     @Transactional(readOnly = true)
-    public Page<UserResponse> list(User actor, UUID centerId, UserRole role, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+    public Page<UserResponse> list(User actor, UUID centerId, UserRole role, Pageable pageable) {
+        UserListScope scope = policy.resolveUserListScope(actor);
+        if (scope.kind() == AdminScopePolicy.Kind.NONE) {
+            // The controller already restricts the roles; this is defence in depth and also
+            // covers supervisors that have no center/region assigned
+            throw new AccessDeniedException("Not allowed to list users");
+        }
         UUID tenantId = TenantContext.get(); // null for platform system_admin
-
-        // region_supervisor: scoped to own region AND tenant, never sees system_admin
-        if (actor.getRole() == UserRole.region_supervisor) {
-            if (actor.getRegion() == null) return Page.empty(pageable);
-            return userRepo.findAllInRegionExcludingRoles(
-                    actor.getRegion().getId(), REGION_INVISIBLE_ROLES, tenantId, pageable)
-                .map(mapper::toResponse);
-        }
-
-        // Platform admin (null tenantId) → no tenant filter; else tenant-scoped
-        if (tenantId != null) {
-            if (centerId != null && role != null)
-                return userRepo.findAllByTenantIdAndCenterIdAndRoleAndDeletedAtIsNull(tenantId, centerId, role, pageable).map(mapper::toResponse);
-            if (centerId != null)
-                return userRepo.findAllByTenantIdAndCenterIdAndDeletedAtIsNull(tenantId, centerId, pageable).map(mapper::toResponse);
-            if (role != null)
-                return userRepo.findAllByTenantIdAndRoleAndDeletedAtIsNull(tenantId, role, pageable).map(mapper::toResponse);
-            return userRepo.findAllByTenantIdAndDeletedAtIsNull(tenantId, pageable).map(mapper::toResponse);
-        }
-
-        // system_admin — returns all (no tenant filter), with optional filters
-        if (centerId != null && role != null)
-            return userRepo.findAllByCenterIdAndRoleAndDeletedAtIsNull(centerId, role, pageable).map(mapper::toResponse);
-        if (centerId != null)
-            return userRepo.findAllByCenterIdAndDeletedAtIsNull(centerId, pageable).map(mapper::toResponse);
-        if (role != null)
-            return userRepo.findAllByRoleAndDeletedAtIsNull(role, pageable).map(mapper::toResponse);
-        return userRepo.findAllByDeletedAtIsNull(pageable).map(mapper::toResponse);
+        return userRepo.findAll(UserSpecs.listFor(scope, tenantId, centerId, role), pageable)
+            .map(mapper::toResponse);
     }
 
     @Transactional(readOnly = true)
@@ -177,21 +189,45 @@ public class UserService {
 
     public UserResponse update(UUID id, UpdateUserRequest req, User actor) {
         User user = tenantSecurity.requireUser(id);
-        // ISSUE 1 FIX: prevent privilege escalation
-        assertCanManage(actor, user);
+        // Scope (404) and rank (403) of the user being changed
+        policy.assertCanManageUser(actor, user);
         assertCanApplyScopeChanges(actor, user, req);
+
+        UserRole finalRole = req.getRole() != null ? req.getRole() : user.getRole();
+        Center finalCenter = user.getCenter();
+        Region finalRegion = user.getRegion();
+        boolean linksChanged = req.getRole() != null && req.getRole() != user.getRole();
+        if (req.getCenterId() != null) {
+            finalCenter = tenantSecurity.requireCenter(req.getCenterId());
+            policy.assertCenterInScope(actor, finalCenter);
+            linksChanged = true;
+        }
+        if (req.getRegionId() != null) {
+            finalRegion = tenantSecurity.requireRegion(req.getRegionId());
+            policy.assertRegionInScope(actor, finalRegion);
+            linksChanged = true;
+        }
+        if (linksChanged) {
+            // Re-validate the role/center/region invariants of the resulting state
+            validateLinks(finalRole, finalCenter, finalRegion);
+            if (finalRole == UserRole.system_admin) {
+                user.setTenantId(null); // platform-level account, same invariant as DataInitializer
+            } else {
+                if (user.getTenantId() == null) {
+                    user.setTenantId(policy.resolveTenantForNewEntity(null, finalCenter, finalRegion));
+                }
+                policy.assertSameTenant(user, finalCenter, finalRegion);
+            }
+        }
+        assertEmailAvailable(user, req.getEmail());
 
         if (StringUtils.hasText(req.getFullName()))  user.setFullName(InputSanitizer.clean(req.getFullName(), 200));
         if (req.getFullNameAr()  != null)            user.setFullNameAr(InputSanitizer.clean(req.getFullNameAr(), 200));
         if (StringUtils.hasText(req.getEmail()))     user.setEmail(req.getEmail());
         if (req.getPhone()       != null)            user.setPhone(req.getPhone());
-        if (req.getRole()        != null)            user.setRole(req.getRole());
-        if (req.getCenterId()    != null) {
-            user.setCenter(tenantSecurity.requireCenter(req.getCenterId()));
-        }
-        if (req.getRegionId() != null) {
-            user.setRegion(tenantSecurity.requireRegion(req.getRegionId()));
-        }
+        user.setRole(finalRole);
+        user.setCenter(finalCenter);
+        user.setRegion(finalRegion);
         return mapper.toResponse(userRepo.save(user));
     }
 
@@ -202,6 +238,7 @@ public class UserService {
      */
     public UserResponse updateMe(UUID id, UpdateUserRequest req) {
         User user = tenantSecurity.requireUser(id);
+        assertEmailAvailable(user, req.getEmail());
         if (StringUtils.hasText(req.getFullName()))  user.setFullName(InputSanitizer.clean(req.getFullName(), 200));
         if (req.getFullNameAr()  != null)            user.setFullNameAr(InputSanitizer.clean(req.getFullNameAr(), 200));
         if (StringUtils.hasText(req.getEmail()))     user.setEmail(req.getEmail());
@@ -211,7 +248,10 @@ public class UserService {
 
     public void toggleActive(UUID id, boolean active, User actor) {
         User user = tenantSecurity.requireUser(id);
-        assertCanManage(actor, user);
+        policy.assertCanManageUser(actor, user);
+        if (!active && actor != null && actor.getId() != null && actor.getId().equals(user.getId())) {
+            throw new AccessDeniedException("You cannot deactivate your own account");
+        }
         user.setActive(active);
         userRepo.save(user);
     }
@@ -225,113 +265,78 @@ public class UserService {
         userRepo.save(user);
     }
 
-    public void grantControlRoomAccess(UUID userId, UUID controlRoomId) {
-        if (accessRepo.existsByUserIdAndControlRoomId(userId, controlRoomId)) return;
+    /**
+     * Grants a control room to a user. The actor must be allowed to manage the user and the control
+     * room must be inside the actor's scope; the existence check comes last so a repeated grant is
+     * not an oracle for rooms or users the actor cannot see.
+     */
+    public void grantControlRoomAccess(UUID userId, UUID controlRoomId, User actor) {
         User user = tenantSecurity.requireUser(userId);
+        policy.assertCanManageUser(actor, user);
         ControlRoom cr = tenantSecurity.requireControlRoom(controlRoomId);
+        policy.assertControlRoomInScope(actor, cr);
+        policy.assertSameTenant(user, cr);
+        assertRoomMatchesUserCenter(actor, user.getCenter(), cr);
+        if (accessRepo.existsByUserIdAndControlRoomId(user.getId(), cr.getId())) return;
         accessRepo.save(UserControlRoomAccess.builder().user(user).controlRoom(cr).build());
     }
 
     // ── Private helpers ────────────────────────────────────────
 
-    /** ISSUE 1 FIX: strict hierarchy enforcement */
-    private void assertCanManage(User actor, User target) {
-        if (actor == null || actor.getRole() == UserRole.system_admin) return;
-        // region_supervisor cannot touch system_admin or other region_supervisors
-        if (actor.getRole() == UserRole.region_supervisor) {
-            if (target.getRole() == UserRole.system_admin
-                    || target.getRole() == UserRole.region_supervisor) {
-                throw new org.springframework.security.access.AccessDeniedException(
-                    "Insufficient privilege to manage this account");
-            }
-            // must be in same region
-            UUID actorRegion = actor.getRegion() != null ? actor.getRegion().getId() : null;
-            UUID targetRegion = target.getRegion() != null ? target.getRegion().getId()
-                : (target.getCenter() != null && target.getCenter().getRegion() != null
-                    ? target.getCenter().getRegion().getId() : null);
-            if (actorRegion == null || !actorRegion.equals(targetRegion)) {
-                throw new org.springframework.security.access.AccessDeniedException(
-                    "User is not in your region");
-            }
-        }
-        // hospital_supervisor cannot touch admin/supervisor level
-        if (actor.getRole() == UserRole.hospital_supervisor) {
-            if (target.getRole() == UserRole.system_admin
-                    || target.getRole() == UserRole.region_supervisor
-                    || target.getRole() == UserRole.hospital_supervisor) {
-                throw new org.springframework.security.access.AccessDeniedException(
-                    "Insufficient privilege to manage this account");
-            }
-        }
-    }
-
     /**
-     * Admin-update scope rules (same hierarchy as create(), see validateRoleAssignment and the
-     * @PreAuthorize on UserController.update):
+     * Admin-update rules on top of AdminScopePolicy.assertCanManageUser:
      *  - nobody may change their own role/center/region through the admin endpoint;
-     *  - a new role must be one the actor could create (non-system_admin cannot grant
-     *    system_admin, region_supervisor cannot grant region_supervisor, etc.);
-     *  - only system_admin may change a region link; region_supervisor may only move users
-     *    to a center inside their own region; hospital_supervisor only to their own center.
+     *  - a new role must be one the actor could create;
+     *  - only system_admin may change a region link (center moves are scope-checked by the caller).
      */
     private void assertCanApplyScopeChanges(User actor, User target, UpdateUserRequest req) {
         if (actor == null) return; // system bootstrap
         boolean self = actor.getId() != null && actor.getId().equals(target.getId());
         if (actor.getRole() == UserRole.system_admin) {
             if (self && req.getRole() != null && req.getRole() != target.getRole()) {
-                throw new org.springframework.security.access.AccessDeniedException(
-                    "You cannot change your own role");
+                throw new AccessDeniedException("You cannot change your own role");
+            }
+            if (req.getRole() != null && req.getRole() != target.getRole()) {
+                policy.assertCanAssignRole(actor, req.getRole());
             }
             return;
         }
         if (self && (req.getRole() != null || req.getCenterId() != null || req.getRegionId() != null)) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                "You cannot change your own role or scope");
+            throw new AccessDeniedException("You cannot change your own role or scope");
         }
-        if (req.getRole() != null) validateRoleAssignment(req.getRole(), actor);
+        if (req.getRole() != null) policy.assertCanAssignRole(actor, req.getRole());
         if (req.getRegionId() != null) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                "Only a system administrator can change a user's region");
-        }
-        if (req.getCenterId() != null) {
-            if (actor.getRole() == UserRole.hospital_supervisor) {
-                UUID own = actor.getCenter() != null ? actor.getCenter().getId() : null;
-                if (own == null || !own.equals(req.getCenterId())) {
-                    throw new org.springframework.security.access.AccessDeniedException(
-                        "Center is outside your scope");
-                }
-            } else if (actor.getRole() == UserRole.region_supervisor) {
-                Center c = tenantSecurity.requireCenter(req.getCenterId());
-                UUID actorRegion = actor.getRegion() != null ? actor.getRegion().getId() : null;
-                if (actorRegion == null || c.getRegion() == null
-                        || !actorRegion.equals(c.getRegion().getId())) {
-                    throw new org.springframework.security.access.AccessDeniedException(
-                        "Center is outside your region");
-                }
-            }
+            throw new AccessDeniedException("Only a system administrator can change a user's region");
         }
     }
 
-    private void validateRoleAssignment(UserRole targetRole, User actor) {
-        if (actor == null) return; // system bootstrap
-        switch (actor.getRole()) {
-            case system_admin -> { /* can create any role */ }
-            case region_supervisor -> {
-                if (targetRole == UserRole.system_admin || targetRole == UserRole.region_supervisor) {
-                    throw new IllegalArgumentException(
-                        "Region supervisors cannot create system_admin or region_supervisor accounts");
-                }
-            }
-            case hospital_supervisor -> {
-                if (targetRole == UserRole.system_admin
-                        || targetRole == UserRole.region_supervisor
-                        || targetRole == UserRole.hospital_supervisor) {
-                    throw new IllegalArgumentException(
-                        "Hospital supervisors cannot create admin/supervisor-level accounts");
-                }
-            }
-            default -> throw new IllegalArgumentException(
-                "Your role is not authorized to create users");
+    /** Final state of a user: required links per role, and center inside region when both are set. */
+    private void validateLinks(UserRole role, Center center, Region region) {
+        if (REGION_ROLES.contains(role) && region == null) {
+            throw new IllegalArgumentException("Region is required for role: " + role);
+        }
+        if (CENTER_ROLES.contains(role) && center == null) {
+            throw new IllegalArgumentException("Center is required for role: " + role);
+        }
+        if (center != null && region != null
+                && (center.getRegion() == null || !region.getId().equals(center.getRegion().getId()))) {
+            throw new IllegalArgumentException("Center does not belong to the given region");
+        }
+    }
+
+    /** A non-admin may only grant control rooms of the user's own center (open question Q1). */
+    private void assertRoomMatchesUserCenter(User actor, Center userCenter, ControlRoom cr) {
+        if (actor == null || actor.getRole() == UserRole.system_admin) return;
+        if (userCenter != null && (cr.getCenter() == null
+                || !userCenter.getId().equals(cr.getCenter().getId()))) {
+            throw new AccessDeniedException("Control room belongs to a different center");
+        }
+    }
+
+    private void assertEmailAvailable(User user, String newEmail) {
+        if (StringUtils.hasText(newEmail) && !newEmail.equalsIgnoreCase(user.getEmail())
+                && userRepo.existsByEmailAndDeletedAtIsNull(newEmail)) {
+            throw new IllegalArgumentException("Email already exists: " + newEmail);
         }
     }
 }

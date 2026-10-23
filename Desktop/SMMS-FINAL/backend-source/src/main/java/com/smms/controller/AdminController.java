@@ -40,15 +40,17 @@ public class AdminController {
 
     @PostMapping("/regions")
     @PreAuthorize("hasRole('system_admin')")
-    public ResponseEntity<RegionResponse> createRegion(@Valid @RequestBody CreateRegionRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(regionService.create(req));
+    public ResponseEntity<RegionResponse> createRegion(@Valid @RequestBody CreateRegionRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(regionService.create(req, actor));
     }
 
     @PutMapping("/regions/{id}")
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<RegionResponse> updateRegion(@PathVariable UUID id,
-                                                       @Valid @RequestBody UpdateRegionRequest req) {
-        return ResponseEntity.ok(regionService.update(id, req));
+                                                       @Valid @RequestBody UpdateRegionRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.ok(regionService.update(id, req, actor));
     }
 
     // ── Centers ───────────────────────────────────────────────
@@ -60,15 +62,17 @@ public class AdminController {
 
     @PostMapping("/centers")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor')")
-    public ResponseEntity<CenterResponse> createCenter(@Valid @RequestBody CreateCenterRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(centerService.create(req));
+    public ResponseEntity<CenterResponse> createCenter(@Valid @RequestBody CreateCenterRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(centerService.create(req, actor));
     }
 
     @PutMapping("/centers/{id}")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor')")
     public ResponseEntity<CenterResponse> updateCenter(@PathVariable UUID id,
-                                                       @Valid @RequestBody UpdateCenterRequest req) {
-        return ResponseEntity.ok(centerService.update(id, req));
+                                                       @Valid @RequestBody UpdateCenterRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.ok(centerService.update(id, req, actor));
     }
 
     // ── Control Rooms ─────────────────────────────────────────
@@ -116,14 +120,16 @@ public class AdminController {
     @PostMapping("/control-rooms")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor','hospital_supervisor')")
     public ResponseEntity<ControlRoomResponse> createControlRoom(
-            @Valid @RequestBody CreateControlRoomRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(controlRoomService.create(req));
+            @Valid @RequestBody CreateControlRoomRequest req,
+            @CurrentUser User actor) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(controlRoomService.create(req, actor));
     }
 
     @PutMapping("/control-rooms/{id}")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor','hospital_supervisor')")
     public ResponseEntity<ControlRoomResponse> updateControlRoom(@PathVariable UUID id,
-                                                                 @Valid @RequestBody UpdateControlRoomRequest req) {
-        return ResponseEntity.ok(controlRoomService.update(id, req));
+                                                                 @Valid @RequestBody UpdateControlRoomRequest req,
+                                                                 @CurrentUser User actor) {
+        return ResponseEntity.ok(controlRoomService.update(id, req, actor));
     }
 }
