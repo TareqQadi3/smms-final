@@ -2,7 +2,8 @@
 # Starts the full SMMS stack. Safe to re-run: keeps existing data volumes.
 # Runs automatically in GitHub Codespaces (see /.devcontainer/devcontainer.json).
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+cd "$(dirname "$SCRIPT_PATH")"
 
 log() { echo "[smms-setup] $*"; }
 
@@ -17,7 +18,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --auto) AUTO_MODE=1; shift ;;
     --backup-file) BACKUP_FILE="${2:-}"; shift 2 || { echo "--backup-file needs a path" >&2; exit 2; } ;;
-    -h|--help) sed -n '/^# ── Deployment guard/,/^# SMMS_ALLOW_UNBACKED_DEPLOY/p' "$0"; exit 0 ;;
+    -h|--help) sed -n '/^# ── Deployment guard/,/^# SMMS_ALLOW_UNBACKED_DEPLOY/p' "$SCRIPT_PATH"; exit 0 ;;
     *) echo "Unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -40,14 +41,15 @@ d3f7b4a5ab3de13335ad7e4e0a29c3c62d83333a4007b1a59d05c634a8f00180
 4976e0e10a8ab028b4ca8e13372c01af4f91f12779f3b027a99fe689771cf8b7"
 
 env_value() {  # env_value KEY -> prints the raw value of KEY from .env (empty if absent)
-  grep -m1 "^$1=" .env | cut -d= -f2- | tr -d '\r' || true
+  # last occurrence wins, like docker compose
+  grep "^$1=" .env | tail -1 | cut -d= -f2- | tr -d '\r' || true
 }
 
 set_env_value() {  # set_env_value KEY VALUE ; the value travels via the environment, not argv
   local tmp
   tmp="$(umask 077; mktemp .env.XXXXXX)"
   K="$1" V="$2" awk 'BEGIN{k=ENVIRON["K"]; v=ENVIRON["V"]}
-    index($0, k "=") == 1 && !done { print k "=" v; done=1; next } { print }' .env > "$tmp"
+    index($0, k "=") == 1 { if (!done) print k "=" v; done=1; next } { print }' .env > "$tmp"
   chmod 600 "$tmp"
   mv "$tmp" .env
 }
@@ -73,6 +75,17 @@ db_volume_exists() {
       --filter "label=com.docker.compose.volume=postgres_data" 2>/dev/null)" ]
 }
 
+# Fail-closed detection used by the guard: any postgres_data volume (whatever the compose project is
+# called), the fixed smms_postgres container, or an unanswerable docker query all count as "a
+# database may exist". A false positive only asks for a backup; a false negative would skip it.
+db_present_anywhere() {
+  local vols
+  vols="$(docker volume ls -q 2>/dev/null)" || return 0
+  if printf '%s\n' "$vols" | grep -Eq '(^|_)postgres_data$'; then return 0; fi
+  if docker container inspect smms_postgres >/dev/null 2>&1; then return 0; fi
+  db_volume_exists
+}
+
 abort_existing_volume() {
   log "ERROR: an existing database volume was found but .env has no database password."
   log "The DB password is bound to that volume; restore your previous .env (or the DB_PASSWORD"
@@ -81,9 +94,17 @@ abort_existing_volume() {
 }
 
 # ── Guard: never migrate/deploy over an existing database without a verified backup ────────
-DEPLOY_MARKER=".smms-deployed-commit"   # untracked; records the commit last deployed by this script
+DEPLOY_MARKER=".smms-deployed-commit"   # untracked; records the state last deployed by this script
 
-current_commit() { git rev-parse HEAD 2>/dev/null || echo "unknown"; }
+# State = HEAD commit + hash of uncommitted changes to tracked files. Without git it is "unknown",
+# which never equals a recorded state, so the guard then always asks for a verified backup.
+# (New untracked files are not part of the state.)
+current_commit() {
+  local head dirty
+  head="$(git rev-parse HEAD 2>/dev/null)" || { echo unknown; return; }
+  dirty="$(git diff HEAD 2>/dev/null | sha256sum | cut -c1-16)"
+  echo "${head}+${dirty}"
+}
 
 backup_is_verified() {  # backup_is_verified FILE -> 0 only for a fresh, checksum-matching verified backup
   local f="$1" m="$1.verified" want got
@@ -94,19 +115,23 @@ backup_is_verified() {  # backup_is_verified FILE -> 0 only for a fresh, checksu
   [ -n "$want" ] && [ "$want" = "$got" ]
 }
 
-if db_volume_exists; then
+if db_present_anywhere; then
   deployed="$(cat "$DEPLOY_MARKER" 2>/dev/null || echo none)"
-  if [ "$(current_commit)" != "$deployed" ]; then
+  state_now="$(current_commit)"
+  if [ "$state_now" = "unknown" ] || [ "$state_now" != "$deployed" ]; then
     if [ "$AUTO_MODE" = "1" ]; then
       log "GUARD: an existing database was found and the code changed since the last deployment."
       log "GUARD: automatic start will NOT build or migrate. Starting the existing stack as it is."
       log "GUARD: to deploy: bash scripts/backup-db.sh, then: bash setup.sh --backup-file <dump>"
-      docker compose up -d --no-build || log "GUARD: no prebuilt images; run the manual steps above."
+      # `start` only starts existing stopped containers; unlike `up` it never recreates them from a
+      # newer image or changed config, so it cannot migrate anything.
+      docker compose start || log "GUARD: containers missing; run the manual steps above."
       exit 0
     elif [ "${SMMS_ALLOW_UNBACKED_DEPLOY:-0}" = "1" ]; then
       log "WARNING: SMMS_ALLOW_UNBACKED_DEPLOY=1 - deploying over an existing database WITHOUT a verified backup."
     elif backup_is_verified "$BACKUP_FILE"; then
       log "Verified backup accepted: $(basename "$BACKUP_FILE")"
+      grep -q "^uploads=skipped" "$BACKUP_FILE.verified" && log "WARNING: this backup does NOT include the uploads (attachments)."
     else
       log "ERROR: refusing to deploy. An existing database volume was found and no fresh verified backup was given."
       log "  1) bash scripts/backup-db.sh        (creates, verifies and rehearses a restore)"
@@ -166,6 +191,7 @@ if ! docker exec smms_backend wget -qO- http://localhost:8080/actuator/health 2>
 fi
 
 code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/login || true)
-printf '%s\n' "$(current_commit)" > "$DEPLOY_MARKER"
+state_final="$(current_commit)"
+if [ "$state_final" != "unknown" ]; then printf '%s\n' "$state_final" > "$DEPLOY_MARKER"; fi
 log "Backend: UP | Login page via nginx: HTTP $code"
 log "Open the PORTS tab and use the address for port 80 (SMMS App)."

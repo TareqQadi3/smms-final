@@ -1,7 +1,6 @@
 package com.smms.config;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
@@ -33,7 +32,7 @@ class DefaultCredentialsReporterTest {
     void isReadOnlyAndNeverFailsStartup() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForList(anyString())).thenThrow(new IllegalStateException("db down"));
-        new DefaultCredentialsReporter(jdbc, encoder).run(new DefaultApplicationArguments());
+        new DefaultCredentialsReporter(jdbc, encoder).onReady();
         verify(jdbc).queryForList(anyString());
         verifyNoMoreInteractions(jdbc); // no update/execute calls
     }

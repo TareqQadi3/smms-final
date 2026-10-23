@@ -2,10 +2,8 @@ package com.smms.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.ApplicationArguments;
-import org.springframework.boot.ApplicationRunner;
-import org.springframework.core.Ordered;
-import org.springframework.core.annotation.Order;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -20,9 +18,8 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-@Order(Ordered.LOWEST_PRECEDENCE)
 @RequiredArgsConstructor
-public class DefaultCredentialsReporter implements ApplicationRunner {
+public class DefaultCredentialsReporter {
 
     /** The documented public default (same constant the login flag uses). */
     static final String PUBLIC_DEFAULT = "Admin@1234";
@@ -30,8 +27,9 @@ public class DefaultCredentialsReporter implements ApplicationRunner {
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
 
-    @Override
-    public void run(ApplicationArguments args) {
+    /** After ALL runners (including DataInitializer) so a just-created default admin is reported too. */
+    @EventListener(ApplicationReadyEvent.class)
+    public void onReady() {
         try {
             int n = report();
             if (n > 0) {

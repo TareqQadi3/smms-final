@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Temp files of setup.sh secret rewriting
+.env.??????
+
 # Deployment guard marker
 .smms-deployed-commit
 
