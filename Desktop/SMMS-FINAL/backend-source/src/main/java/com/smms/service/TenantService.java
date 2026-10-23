@@ -8,6 +8,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +24,11 @@ public class TenantService {
     @Transactional(readOnly = true)
     public List<Tenant> listAll() {
         return repo.findAll();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Tenant> list(Pageable pageable) {
+        return repo.findAll(pageable);
     }
 
     @Transactional(readOnly = true)
