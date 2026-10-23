@@ -2,6 +2,7 @@ package com.smms.service;
 
 import com.smms.dto.response.NotificationResponse;
 import com.smms.entity.*;
+import com.smms.enums.UserRole;
 import com.smms.repository.NotificationRepository;
 import com.smms.repository.UserControlRoomAccessRepository;
 import com.smms.websocket.NotificationWebSocketHandler;
@@ -25,8 +26,13 @@ public class NotificationService {
     public void notifyControlRoom(WorkOrder wo) {
         List<UserControlRoomAccess> members =
             accessRepo.findByControlRoomId(wo.getControlRoom().getId());
-        members.forEach(m -> sendAndPush(m.getUser(), wo, "NEW_TICKET",
-            "تذكرة جديدة: " + wo.getTicketNumber()));
+        // Only active control-room operators are told about new tickets; residents, departments and
+        // other roles can hold access rows to the room but must not learn about others' tickets
+        members.stream()
+            .map(UserControlRoomAccess::getUser)
+            .filter(u -> u.getRole() == UserRole.control_room && u.isActive())
+            .forEach(u -> sendAndPush(u, wo, "NEW_TICKET",
+                "تذكرة جديدة: " + wo.getTicketNumber()));
     }
 
     public void notifyTransition(WorkOrder wo, User actor) {
