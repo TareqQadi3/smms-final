@@ -1,6 +1,7 @@
 package com.smms.controller;
 
 import com.smms.dto.request.CreateUserRequest;
+import com.smms.dto.request.ResetPasswordRequest;
 import com.smms.dto.request.UpdateUserRequest;
 import com.smms.dto.response.UserResponse;
 import com.smms.entity.User;
@@ -71,7 +72,7 @@ public class UserController {
     @PutMapping("/api/users/me")
     public ResponseEntity<UserResponse> updateMe(@Valid @RequestBody UpdateUserRequest req,
                                                   @CurrentUser User actor) {
-        return ResponseEntity.ok(userService.update(actor.getId(), req, actor));
+        return ResponseEntity.ok(userService.updateMe(actor.getId(), req));
     }
 
     @PostMapping("/api/users/me/change-password")
@@ -85,8 +86,8 @@ public class UserController {
     @PostMapping({"/api/users/{id}/reset-password", "/api/admin/users/{id}/reset-password"})
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<Void> resetPassword(@PathVariable UUID id,
-                                               @RequestParam String newPassword) {
-        userService.resetPassword(id, newPassword);
+                                               @Valid @RequestBody ResetPasswordRequest req) {
+        userService.resetPassword(id, req.getNewPassword());
         return ResponseEntity.noContent().build();
     }
 

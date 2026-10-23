@@ -22,8 +22,7 @@ Options:
   --apply                    Actually create the missing accounts.
   --reset-password USERNAME  With --apply: reset this EXISTING user's password to the
                              test password. Repeatable. Without this option no existing
-                             account is ever changed. WARNING: the app's endpoint puts
-                             the password in the URL, so nginx access logs will contain it.
+                             account is ever changed.
   -h, --help                 Show this help.
 
 Environment variables (optional):
@@ -256,10 +255,6 @@ if not test_pass:
 if len(test_pass) < 8:
     die("The test password must be at least 8 characters. Nothing was changed.")
 
-if any(r[2] == "reset-password" for r in todo):
-    print("\nWARNING: the app's reset-password endpoint puts the new password in the URL,")
-    print("so nginx access logs will contain it.")
-
 # ---- apply --------------------------------------------------------------
 done, failed = [], []
 for username, role, action, _, acc, u in todo:
@@ -269,7 +264,7 @@ for username, role, action, _, acc, u in todo:
         ok = st == 201
         label = "created"
     else:
-        st, res = call("POST", f"/admin/users/{u['id']}/reset-password?newPassword={urllib.parse.quote(test_pass, safe='')}", token=token)
+        st, res = call("POST", f"/admin/users/{u['id']}/reset-password", {"newPassword": test_pass}, token)
         ok = st in (200, 204)
         label = "password reset"
     if ok:

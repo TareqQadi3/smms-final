@@ -20,3 +20,8 @@ Thumbs.db
 
 # Agent worktrees (temporary)
 .claude/worktrees/
+
+# Database backups / dumps
+backups/
+*.dump
+*.sql.gz

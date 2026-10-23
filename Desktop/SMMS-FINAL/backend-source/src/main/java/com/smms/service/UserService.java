@@ -179,6 +179,7 @@ public class UserService {
         User user = tenantSecurity.requireUser(id);
         // ISSUE 1 FIX: prevent privilege escalation
         assertCanManage(actor, user);
+        assertCanApplyScopeChanges(actor, user, req);
 
         if (StringUtils.hasText(req.getFullName()))  user.setFullName(InputSanitizer.clean(req.getFullName(), 200));
         if (req.getFullNameAr()  != null)            user.setFullNameAr(InputSanitizer.clean(req.getFullNameAr(), 200));
@@ -191,6 +192,20 @@ public class UserService {
         if (req.getRegionId() != null) {
             user.setRegion(tenantSecurity.requireRegion(req.getRegionId()));
         }
+        return mapper.toResponse(userRepo.save(user));
+    }
+
+    /**
+     * Self-service profile update (PUT /api/users/me). Only personal contact fields are
+     * applied; role, center and region in the request are ignored so a user can never
+     * change their own privileges or scope.
+     */
+    public UserResponse updateMe(UUID id, UpdateUserRequest req) {
+        User user = tenantSecurity.requireUser(id);
+        if (StringUtils.hasText(req.getFullName()))  user.setFullName(InputSanitizer.clean(req.getFullName(), 200));
+        if (req.getFullNameAr()  != null)            user.setFullNameAr(InputSanitizer.clean(req.getFullNameAr(), 200));
+        if (StringUtils.hasText(req.getEmail()))     user.setEmail(req.getEmail());
+        if (req.getPhone()       != null)            user.setPhone(req.getPhone());
         return mapper.toResponse(userRepo.save(user));
     }
 
@@ -246,6 +261,53 @@ public class UserService {
                     || target.getRole() == UserRole.hospital_supervisor) {
                 throw new org.springframework.security.access.AccessDeniedException(
                     "Insufficient privilege to manage this account");
+            }
+        }
+    }
+
+    /**
+     * Admin-update scope rules (same hierarchy as create(), see validateRoleAssignment and the
+     * @PreAuthorize on UserController.update):
+     *  - nobody may change their own role/center/region through the admin endpoint;
+     *  - a new role must be one the actor could create (non-system_admin cannot grant
+     *    system_admin, region_supervisor cannot grant region_supervisor, etc.);
+     *  - only system_admin may change a region link; region_supervisor may only move users
+     *    to a center inside their own region; hospital_supervisor only to their own center.
+     */
+    private void assertCanApplyScopeChanges(User actor, User target, UpdateUserRequest req) {
+        if (actor == null) return; // system bootstrap
+        boolean self = actor.getId() != null && actor.getId().equals(target.getId());
+        if (actor.getRole() == UserRole.system_admin) {
+            if (self && req.getRole() != null && req.getRole() != target.getRole()) {
+                throw new org.springframework.security.access.AccessDeniedException(
+                    "You cannot change your own role");
+            }
+            return;
+        }
+        if (self && (req.getRole() != null || req.getCenterId() != null || req.getRegionId() != null)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                "You cannot change your own role or scope");
+        }
+        if (req.getRole() != null) validateRoleAssignment(req.getRole(), actor);
+        if (req.getRegionId() != null) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                "Only a system administrator can change a user's region");
+        }
+        if (req.getCenterId() != null) {
+            if (actor.getRole() == UserRole.hospital_supervisor) {
+                UUID own = actor.getCenter() != null ? actor.getCenter().getId() : null;
+                if (own == null || !own.equals(req.getCenterId())) {
+                    throw new org.springframework.security.access.AccessDeniedException(
+                        "Center is outside your scope");
+                }
+            } else if (actor.getRole() == UserRole.region_supervisor) {
+                Center c = tenantSecurity.requireCenter(req.getCenterId());
+                UUID actorRegion = actor.getRegion() != null ? actor.getRegion().getId() : null;
+                if (actorRegion == null || c.getRegion() == null
+                        || !actorRegion.equals(c.getRegion().getId())) {
+                    throw new org.springframework.security.access.AccessDeniedException(
+                        "Center is outside your region");
+                }
             }
         }
     }

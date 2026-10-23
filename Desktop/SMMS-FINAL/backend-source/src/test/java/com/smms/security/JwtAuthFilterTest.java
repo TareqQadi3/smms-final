@@ -1,0 +1,77 @@
+package com.smms.security;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smms.cache.SubscriptionCache;
+import com.smms.entity.User;
+import com.smms.enums.UserRole;
+import com.smms.repository.TenantSubscriptionRepository;
+import jakarta.servlet.FilterChain;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.Base64;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+class JwtAuthFilterTest {
+
+    private static final String TEST_SECRET = Base64.getEncoder().encodeToString(
+        "smms-test-secret-key-for-unit-tests-must-be-long-enough-0123456789".getBytes());
+
+    private JwtService jwtService;
+    private JwtAuthFilter filter;
+    private User user;
+
+    @BeforeEach
+    void setUp() {
+        SecurityContextHolder.clearContext();
+        jwtService = new JwtService();
+        ReflectionTestUtils.setField(jwtService, "secret", TEST_SECRET);
+        ReflectionTestUtils.setField(jwtService, "expiryHours", 8L);
+        ReflectionTestUtils.setField(jwtService, "refreshExpiryDays", 7L);
+
+        user = new User();
+        user.setId(java.util.UUID.randomUUID());
+        user.setUsername("tech1");
+        user.setRole(UserRole.technician);
+
+        UserDetailsService uds = mock(UserDetailsService.class);
+        when(uds.loadUserByUsername("tech1")).thenReturn(user);
+        filter = new JwtAuthFilter(jwtService, uds, mock(TenantSubscriptionRepository.class),
+            mock(SubscriptionCache.class), new ObjectMapper());
+    }
+
+    @AfterEach
+    void tearDown() { SecurityContextHolder.clearContext(); }
+
+    private boolean authenticatedWith(String token) throws Exception {
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/users/me");
+        req.addHeader("Authorization", "Bearer " + token);
+        FilterChain chain = mock(FilterChain.class);
+        boolean[] authed = new boolean[1];
+        doAnswer(inv -> {
+            authed[0] = SecurityContextHolder.getContext().getAuthentication() != null;
+            return null;
+        }).when(chain).doFilter(any(), any());
+        filter.doFilter(req, new MockHttpServletResponse(), chain);
+        return authed[0];
+    }
+
+    @Test
+    void accessTokenAuthenticates() throws Exception {
+        assertThat(authenticatedWith(jwtService.generateToken(user))).isTrue();
+    }
+
+    @Test
+    void refreshTokenIsNotAuthenticatedAsBearer() throws Exception {
+        assertThat(authenticatedWith(jwtService.generateRefreshToken(user))).isFalse();
+    }
+}

@@ -45,6 +45,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.UNAUTHORIZED, e.getMessage());
     }
 
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<ErrorBody> accountLocked(AccountLockedException e) {
+        log.warn("Account locked: {}", e.getMessage());
+        return error(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
+    }
+
     @ExceptionHandler(TicketLockedException.class)
     public ResponseEntity<ErrorBody> locked(TicketLockedException e) {
         log.warn("Locked: {}", e.getMessage());

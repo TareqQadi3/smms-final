@@ -73,7 +73,7 @@ export const userApi = {
   grantControlRoom: (userId: string, controlRoomId: string) =>
     api.post(`/admin/users/${userId}/control-rooms`, null, { params: { controlRoomId } }),
   resetPassword: (id: string, newPassword: string) =>
-    api.post(`/admin/users/${id}/reset-password`, null, { params: { newPassword } }),
+    api.post(`/admin/users/${id}/reset-password`, { newPassword }),
 };
 
 // ── Regions ───────────────────────────────────────────────
