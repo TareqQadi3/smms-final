@@ -74,6 +74,8 @@ class EndpointAuthorizationCoverageTest {
         List<Endpoint> out = new ArrayList<>();
         for (BeanDefinition bd : scan.findCandidateComponents("com.smms")) {
             Class<?> type = Class.forName(bd.getBeanClassName());
+            // test-only fixtures (e.g. SecurityChainTest.Probe) are not application endpoints
+            if (type.getProtectionDomain().getCodeSource().getLocation().getPath().contains("test-classes")) continue;
             RequestMapping base = AnnotatedElementUtils.findMergedAnnotation(type, RequestMapping.class);
             String[] prefixes = base != null && base.path().length > 0 ? base.path() : new String[] {""};
             PreAuthorize onClass = AnnotatedElementUtils.findMergedAnnotation(type, PreAuthorize.class);

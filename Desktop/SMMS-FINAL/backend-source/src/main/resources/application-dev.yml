@@ -53,7 +53,7 @@ management:
 
 app:
   jwt:
-    secret: dGhpcy1pcy1hLXZlcnktbG9uZy1zZWNyZXQta2V5LWZvci1zbW1zLWRldi0yMDI0LXVzZS1pbi1wcm9kdWN0aW9uLTEyMw==
+    secret: ${JWT_SECRET}
     expiry-hours: 8
     refresh-expiry-days: 7
   upload:

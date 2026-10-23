@@ -27,6 +27,7 @@ public class WsTicketController {
     private final JwtService jwtService;
 
     @PostMapping("/ticket")
+    @org.springframework.security.access.prepost.PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> ticket(@CurrentUser User actor,
                                     @RequestHeader("Authorization") String authorization) {
         String token = authorization.startsWith("Bearer ") ? authorization.substring(7) : "";

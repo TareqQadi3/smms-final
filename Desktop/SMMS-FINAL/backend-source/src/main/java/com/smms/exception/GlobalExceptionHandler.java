@@ -46,6 +46,12 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.CONFLICT, "The request conflicts with existing data");
     }
 
+    /** Wrong HTTP verb on an existing path is a client error, not a server fault. */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorBody> methodNotAllowed(org.springframework.web.HttpRequestMethodNotSupportedException e) {
+        return error(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed");
+    }
+
     @ExceptionHandler(WorkflowException.class)
     public ResponseEntity<ErrorBody> workflow(WorkflowException e) {
         log.warn("Workflow: {}", e.getMessage());
