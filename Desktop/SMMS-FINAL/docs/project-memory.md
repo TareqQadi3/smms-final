@@ -118,3 +118,8 @@ Hard tasks: plan with Opus 5.5 only, execute with Sonnet 5.5 only, verify the mo
 - Fixed on branch: SEC-A, SEC-B, SEC-C, SEC-D, SEC-H, SEC-I, SEC-001.
 - Still open: DB-001 (tenant_id on history/attachments/notifications), DB-002 (no migration tool), DB-005 (no CHECKs), department link, SEC-011 (committed test JWT secret — rotate before real use). Plans in docs/security/phase2-proposals.md.
 - Roadmap gaps (not security): stock deduction, procurement, return-for-info, escalation, duplicate detection.
+
+## Security phase 3 status (branch claude/security-phase-3, 2026-10-23)
+- Done on branch: Flyway + V3-V8, tenant_id on child tables, safe startup, tenant assignment endpoint, secret removal + prod guard, user-admin authz parity, assign-400 fix, return-for-info, escalation notifications, duplicate warning. Details: work-log Entry 9, security/migrations-and-secrets.md.
+- Still open: department link (users.department_id), wrong-tenant row detection, attachment download endpoint, refresh-token rotation/logout revocation, WebSocket browser auth, default admin password, further CHECKs, inventory/purchasing (roadmap.md), technician mobile app (mobile-technician-api.md).
+- Deploying to the Codespace needs the owner's approval and a DB backup first; setup.sh will replace the leaked JWT secret and force re-login.

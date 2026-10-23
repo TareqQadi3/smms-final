@@ -19,6 +19,9 @@ public interface UserRepository extends JpaRepository<User, UUID>, JpaSpecificat
     List<User>  findAllByCenterIdAndRoleAndDeletedAtIsNull(UUID centerId, UserRole role);
 
     boolean existsByUsernameAndDeletedAtIsNull(String username);
+
+    /** Case-insensitive twin; matches the unique index on lower(username) (V8). */
+    boolean existsByUsernameIgnoreCaseAndDeletedAtIsNull(String username);
     boolean existsByEmailAndDeletedAtIsNull(String email);
     long countByTenantIdAndDeletedAtIsNull(UUID tenantId);
 }

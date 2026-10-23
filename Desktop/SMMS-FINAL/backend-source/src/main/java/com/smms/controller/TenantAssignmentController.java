@@ -36,7 +36,7 @@ public class TenantAssignmentController {
     private final TenantAssignmentService service;
 
     @GetMapping("/tenantless-users")
-    @PreAuthorize("hasRole('system_admin')")
+    @PreAuthorize(TenantController.PLATFORM_ADMIN_ONLY)
     public ResponseEntity<Page<TenantAssignmentCandidateResponse>> tenantless(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -47,7 +47,7 @@ public class TenantAssignmentController {
     }
 
     @PostMapping("/users/{id}/tenant")
-    @PreAuthorize("hasRole('system_admin')")
+    @PreAuthorize(TenantController.PLATFORM_ADMIN_ONLY)
     public ResponseEntity<TenantAssignmentResponse> assign(@PathVariable UUID id,
                                                            @Valid @RequestBody TenantAssignmentRequest req,
                                                            @CurrentUser User actor) {

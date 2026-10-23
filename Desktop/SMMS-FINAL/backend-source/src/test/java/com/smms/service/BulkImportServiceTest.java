@@ -255,7 +255,7 @@ class BulkImportServiceTest {
 
     @Test
     void existingUsernameAndEmailAreReported() throws Exception {
-        when(userRepo.existsByUsernameAndDeletedAtIsNull("taken")).thenReturn(true);
+        when(userRepo.existsByUsernameIgnoreCaseAndDeletedAtIsNull("taken")).thenReturn(true);
         when(userRepo.existsByEmailAndDeletedAtIsNull("used@x.com")).thenReturn(true);
         String[] mailRow = resident("mail.user", "Passw0rd!", "CA");
         mailRow[4] = "used@x.com";

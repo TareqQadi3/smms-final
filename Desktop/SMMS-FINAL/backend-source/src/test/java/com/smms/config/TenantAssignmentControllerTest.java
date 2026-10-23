@@ -20,13 +20,13 @@ import static org.mockito.Mockito.*;
 class TenantAssignmentControllerTest {
 
     @Test
-    void bothEndpointsRequireSystemAdmin() {
+    void bothEndpointsRequirePlatformAdministrator() {
         for (Method m : TenantAssignmentController.class.getDeclaredMethods()) {
             if (java.lang.reflect.Modifier.isPublic(m.getModifiers())
                     && !m.getName().equals("alreadyAssigned")) {
                 PreAuthorize pa = m.getAnnotation(PreAuthorize.class);
                 assertThat(pa).as(m.getName()).isNotNull();
-                assertThat(pa.value()).isEqualTo("hasRole('system_admin')");
+                assertThat(pa.value()).isEqualTo(com.smms.controller.TenantController.PLATFORM_ADMIN_ONLY);
             }
         }
     }

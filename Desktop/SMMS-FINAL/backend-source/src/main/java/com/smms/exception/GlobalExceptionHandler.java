@@ -33,6 +33,13 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
+    /** Unique/FK violations that slipped past service checks: 409 without leaking constraint names. */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorBody> integrity(org.springframework.dao.DataIntegrityViolationException e) {
+        log.warn("Data integrity violation: {}", e.getClass().getSimpleName());
+        return error(HttpStatus.CONFLICT, "The request conflicts with existing data");
+    }
+
     @ExceptionHandler(WorkflowException.class)
     public ResponseEntity<ErrorBody> workflow(WorkflowException e) {
         log.warn("Workflow: {}", e.getMessage());

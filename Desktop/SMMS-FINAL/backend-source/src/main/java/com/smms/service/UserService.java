@@ -102,7 +102,7 @@ public class UserService {
         planEnforcement.checkUserLimit(tenantId, 1);
 
         // ── Duplicate checks ───────────────────────────────────
-        if (userRepo.existsByUsernameAndDeletedAtIsNull(username)) {
+        if (userRepo.existsByUsernameIgnoreCaseAndDeletedAtIsNull(username)) {
             throw new IllegalArgumentException("Username already exists: " + username);
         }
         if (StringUtils.hasText(req.getEmail())

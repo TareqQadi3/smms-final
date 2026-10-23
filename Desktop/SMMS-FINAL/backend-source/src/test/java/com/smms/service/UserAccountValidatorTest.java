@@ -180,7 +180,7 @@ class UserAccountValidatorTest {
         req.setRole(UserRole.resident);
         req.setCenterId(centerA.getId());
         userService.create(req, platformAdmin);
-        verify(userRepo).existsByUsernameAndDeletedAtIsNull("res.one");
+        verify(userRepo).existsByUsernameIgnoreCaseAndDeletedAtIsNull("res.one");
     }
 
     // ── update path ─────────────────────────────────────────

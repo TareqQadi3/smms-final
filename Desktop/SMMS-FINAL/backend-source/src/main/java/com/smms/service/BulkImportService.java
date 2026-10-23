@@ -159,9 +159,9 @@ public class BulkImportService {
                 isDepartment ? c[2] : null, isDepartment ? c[4] : null)));
             String username = c[0];
             if (StringUtils.hasText(username) && validator.validateUsername(username).isEmpty()) {
-                if (!usernames.add(username)) {
+                if (!usernames.add(username.toLowerCase(java.util.Locale.ROOT))) {
                     rowErrors.add("username '" + username + "' appears more than once in the file");
-                } else if (userRepo.existsByUsernameAndDeletedAtIsNull(username)) {
+                } else if (userRepo.existsByUsernameIgnoreCaseAndDeletedAtIsNull(username)) {
                     rowErrors.add("username '" + username + "' already exists");
                 }
             }
