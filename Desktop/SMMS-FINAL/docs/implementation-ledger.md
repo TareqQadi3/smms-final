@@ -4,7 +4,7 @@ Architecture: `fp1-plan` by claude-opus-5-5 (self-reported). Status values: plan
 
 | WS | Owner | Files (main) | Migrations | Depends on | Tests | Status |
 |---|---|---|---|---|---|---|
-| Contracts | W0 | WorkOrder/User entities, WorkOrderResponse/Mapper, WorkOrderHistoryWriter, createGenerated, idempotency/*, StockLedger, CsvWriter, GlobalExceptionHandler, AbstractDbIT, pom surefire | V13, V14 | base 727a37a | mapper, idempotency, CSV, handler, createGenerated | planned |
+| Contracts | W0 | WorkOrder/User entities, WorkOrderResponse/Mapper, WorkOrderHistoryWriter, createGenerated, idempotency/*, StockLedger, CsvWriter, GlobalExceptionHandler, AbstractDbIT, pom surefire | V13, V14 | base 727a37a | mapper, idempotency, CSV, handler, createGenerated | implemented (claude/fp1-w0), DB-verified on throwaway PG16 |
 | Frontend tooling | F0 | package.json, vitest/playwright config, module-i18n, components/common/* | – | – | component tests | planned |
 | WS1 workflow | W1 | WorkOrderService, WorkflowEngine, NotificationService, SlaScheduler, WorkOrderController, AttachmentService, workflow/**, department/** | V20-V25 | W0 | matrix, SLA pause, escalation, confirm/rating, public status, emergency, dept scope | planned |
 | WS2 inventory core | W2a | inventory/** (StockLedgerService), InventoryItem/Movement | V30-V34 | W0 | concurrency/idempotency DB ITs, triggers, CHECKs | planned |
