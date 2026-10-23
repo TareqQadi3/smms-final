@@ -71,6 +71,25 @@ public class PlanEnforcementService {
         }
     }
 
+    /**
+     * Ticket limit for an explicit tenant (system-generated tickets run without a request context).
+     * A null tenant is never limited.
+     */
+    public void checkTicketLimit(UUID tenantId) {
+        if (tenantId == null) return;
+
+        PlanType   plan   = planFor(tenantId);
+        PlanLimits limits = PlanConfig.get(plan);
+        if (limits.isUnlimited()) return;
+
+        long current = workOrderRepo.countByTenantIdAndDeletedAtIsNull(tenantId);
+        if (current >= limits.maxTickets()) {
+            throw new PlanLimitExceededException(
+                "Ticket limit reached (" + limits.maxTickets() + ") for plan " + plan
+                + ". Upgrade your plan to submit more tickets.");
+        }
+    }
+
     /** Call before creating a new center. */
     public void checkCenterLimit() {
         checkCenterLimit(TenantContext.get());

@@ -15,6 +15,8 @@ import com.smms.repository.*;
 import com.smms.security.TenantSecurityService;
 import com.smms.security.WorkOrderAccessPolicy;
 import com.smms.security.WorkOrderScope;
+import com.smms.workflow.GeneratedWorkOrderSpec;
+import com.smms.workflow.WorkOrderHistoryWriter;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +47,9 @@ public class WorkOrderService {
     private final WorkOrderAccessPolicy accessPolicy;
     private final EntityManager entityManager;
     private final UserRepository userRepo;
+    private final WorkOrderHistoryWriter historyWriter;
+    private final ControlRoomRepository controlRoomRepo;
+    private final AssetRepository assetRepo;
 
     // ── Create ────────────────────────────────────────────
 
@@ -85,6 +90,59 @@ public class WorkOrderService {
         // Non-blocking hint; filtered by the creator's own visibility so it can never leak other tickets
         response.setPossibleDuplicates(findDuplicates(saved, actor));
         return response;
+    }
+
+    /**
+     * System-generated work order (preventive maintenance) on behalf of {@code spec.requester()}.
+     * Joins the caller's transaction; runs without a TenantContext (schedulers), so every lookup
+     * names the tenant explicitly. The control room, the optional asset and the requester must all
+     * belong to {@code spec.tenantId()} and the requester must be active; the tenant's ticket plan
+     * limit applies. The row starts as a normal {@code new} ticket in the normal workflow.
+     */
+    public WorkOrder createGenerated(GeneratedWorkOrderSpec spec) {
+        UUID tenantId = spec.tenantId();
+        if (tenantId == null) throw new IllegalArgumentException("tenantId is required");
+        if (spec.subType() == null) throw new IllegalArgumentException("subType is required");
+        User requester = spec.requester();
+        if (requester == null || !tenantId.equals(requester.getTenantId())) {
+            throw new IllegalArgumentException("Requester does not belong to the tenant");
+        }
+        if (!requester.isActive() || requester.getDeletedAt() != null) {
+            throw new WorkflowException("Requester is inactive");
+        }
+        ControlRoom cr = controlRoomRepo.findByIdAndTenantIdAndDeletedAtIsNull(spec.controlRoomId(), tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException("Control room not found"));
+        if (!cr.isActive()) throw new WorkflowException("Control room is inactive");
+        Asset asset = null;
+        if (spec.assetId() != null) {
+            asset = assetRepo.findByIdAndTenantIdAndDeletedAtIsNull(spec.assetId(), tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Asset not found"));
+        }
+        planEnforcement.checkTicketLimit(tenantId);
+
+        WorkOrder wo = WorkOrder.builder()
+            .center(cr.getCenter())
+            .controlRoom(cr)
+            .subType(spec.subType())
+            .title(InputSanitizer.clean(spec.title(), 500))
+            .description(InputSanitizer.clean(spec.description()))
+            .locationDetail(InputSanitizer.clean(spec.locationDetail(), 300))
+            .priority(spec.priority() != null ? spec.priority() : TicketPriority.medium)
+            .requestedBy(requester)
+            .createdByRole(requester.getRole())
+            .asset(asset)
+            .status(TicketStatus.NEW)
+            .currentStage("new")
+            .build();
+        wo.setTenantId(tenantId);
+        WorkOrder saved = workOrderRepo.save(wo);
+        // ticket_number and sla_deadline come from DB triggers on INSERT (see create())
+        workOrderRepo.flush();
+        entityManager.refresh(saved);
+        historyWriter.record(saved, null, TicketStatus.NEW, requester,
+            spec.historyNote() != null ? spec.historyNote() : "Ticket created");
+        notificationService.notifyControlRoom(saved);
+        return saved;
     }
 
     // ── Transition ────────────────────────────────────────
@@ -485,15 +543,7 @@ public class WorkOrderService {
 
     private void recordHistory(WorkOrder wo, TicketStatus from, TicketStatus to,
                                 User actor, String note) {
-        historyRepo.save(TicketHistory.builder()
-            .workOrder(wo)
-            .actor(actor)
-            .actorRole(actor.getRole())
-            .fromStatus(from)
-            .toStatus(to)
-            .stage(wo.getCurrentStage())
-            .note(InputSanitizer.clean(note, 1000))
-            .build());
+        historyWriter.record(wo, from, to, actor, note);
     }
 
     private void applyTransitionSideEffects(WorkOrder wo, TransitionRequest req,

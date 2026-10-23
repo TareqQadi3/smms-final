@@ -1,5 +1,8 @@
 package com.smms.authz;
 
+import com.smms.workflow.WorkOrderHistoryWriter;
+import com.smms.repository.ControlRoomRepository;
+import com.smms.repository.AssetRepository;
 import com.smms.dto.request.TransitionRequest;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.Center;
@@ -68,7 +71,8 @@ class WorkOrderTransitionMatrixTest {
         when(mapper.toResponse(any(WorkOrder.class))).thenAnswer(i -> WorkOrderResponse.builder().build());
         service = new WorkOrderService(workOrderRepo, historyRepo, new WorkflowEngine(), notifications,
             mapper, mock(PlanEnforcementService.class), mock(TenantSecurityService.class), accessPolicy,
-            mock(EntityManager.class), mock(UserRepository.class));
+            mock(EntityManager.class), mock(UserRepository.class),
+            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class));
         when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
     }
 
