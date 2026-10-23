@@ -138,7 +138,7 @@ public class DataInitializer implements CommandLineRunner {
 
             // Ensure existing system_admin users always have null tenantId
             update(stmt, "system_admin clear",
-                "UPDATE users SET tenant_id = NULL WHERE role::text = 'system_admin'");
+                "UPDATE users SET tenant_id = NULL WHERE role::text = 'system_admin' AND tenant_id IS NOT NULL");
             if (total > 0) log.info("Backfilled tenant_id for {} rows", total);
         } catch (Exception e) {
             log.warn("Tenant backfill failed: {}", e.getMessage());
