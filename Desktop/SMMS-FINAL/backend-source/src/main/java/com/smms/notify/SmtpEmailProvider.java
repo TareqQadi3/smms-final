@@ -29,7 +29,7 @@ public final class SmtpEmailProvider implements NotificationProvider {
     public SmtpEmailProvider(JavaMailSender sender, String from, String subjectPrefix) {
         this.sender = sender;
         this.from = from;
-        this.subjectPrefix = subjectPrefix == null ? "" : stripLineBreaks(subjectPrefix);
+        this.subjectPrefix = subjectPrefix == null ? "" : subjectPrefix.replaceAll("[\\r\\n]+", " ");
     }
 
     /** Problems that make the provider unusable; empty means usable. Never contains a secret. */

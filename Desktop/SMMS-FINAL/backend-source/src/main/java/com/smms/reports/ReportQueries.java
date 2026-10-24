@@ -4,7 +4,7 @@ import com.smms.reports.ReportModels.*;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -26,7 +26,7 @@ import java.util.*;
  * </ul>
  * Reads run in READ ONLY transactions, so a report never writes.
  */
-@Repository
+@Component
 @Transactional(readOnly = true)
 public class ReportQueries {
 

@@ -8,6 +8,7 @@ public final class ErrorSanitizer {
     public static final int MAX_LENGTH = 500;
 
     private static final Pattern EMAIL = Pattern.compile("[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+");
+    private static final Pattern SCHEME = Pattern.compile("(?i)\\b(bearer|basic)\\s+[^\\s\"',;]+");
     private static final Pattern BEARER = Pattern.compile("(?i)(bearer|basic|token|password|secret|apikey|api-key|authorization)([\"'=:\\s]+)[^\\s\"',;]+");
     private static final Pattern URL_USERINFO = Pattern.compile("(?i)(https?://)[^/\\s@]+@");
     private static final Pattern LONG_DIGITS = Pattern.compile("\\+?\\d[\\d\\s().-]{6,}\\d");
@@ -20,6 +21,7 @@ public final class ErrorSanitizer {
         String s = CONTROL.matcher(raw).replaceAll(" ");
         s = URL_USERINFO.matcher(s).replaceAll("$1***@");
         s = EMAIL.matcher(s).replaceAll("***");
+        s = SCHEME.matcher(s).replaceAll("$1 ***");
         s = BEARER.matcher(s).replaceAll("$1$2***");
         s = LONG_DIGITS.matcher(s).replaceAll("***");
         s = s.trim();

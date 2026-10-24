@@ -21,6 +21,7 @@ public class ProviderRegistry {
 
     private final Map<DeliveryChannel, NotificationProvider> providers = new EnumMap<>(DeliveryChannel.class);
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ProviderRegistry(NotificationProperties props, ObjectProvider<JavaMailSender> mailSender) {
         providers.put(DeliveryChannel.email, buildEmail(props, safeMailSender(mailSender)));
         providers.put(DeliveryChannel.sms, buildSms(props));
