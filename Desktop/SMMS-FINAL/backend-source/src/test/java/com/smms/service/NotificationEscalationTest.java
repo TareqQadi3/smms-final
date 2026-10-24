@@ -6,7 +6,6 @@ import com.smms.enums.UserRole;
 import com.smms.repository.NotificationRepository;
 import com.smms.repository.UserControlRoomAccessRepository;
 import com.smms.repository.UserRepository;
-import com.smms.scheduler.SlaScheduler;
 import com.smms.repository.WorkOrderRepository;
 import com.smms.websocket.NotificationWebSocketHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -20,6 +19,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -101,33 +101,53 @@ class NotificationEscalationTest {
         verify(userRepo, never()).findAllByCenterIdAndRoleAndDeletedAtIsNull(any(), eq(UserRole.technician));
     }
 
+    private com.smms.workflow.EscalationService scheduler(WorkOrderRepository repo, NotificationService ns,
+                                                         com.smms.workflow.EscalationRepository esc) {
+        when(esc.insertIgnore(any(), any(), any(), anyInt(), any(), any(), any())).thenReturn(1);
+        when(repo.saveAndFlush(any(WorkOrder.class))).thenAnswer(i -> i.getArgument(0));
+        return new com.smms.workflow.EscalationService(repo, esc, ns,
+            mock(com.smms.security.WorkOrderAccessPolicy.class), mock(com.smms.workflow.WorkOrderHistoryWriter.class),
+            new com.smms.workflow.EscalationProperties(),
+            mock(org.springframework.transaction.PlatformTransactionManager.class));
+    }
+
     @Test
     void schedulerEscalatesOnlyCriticalAndHigh() {
         WorkOrderRepository repo = mock(WorkOrderRepository.class);
         NotificationService ns = mock(NotificationService.class);
+        com.smms.workflow.EscalationRepository esc = mock(com.smms.workflow.EscalationRepository.class);
         WorkOrder crit = ticket(TicketPriority.critical);
         WorkOrder high = ticket(TicketPriority.high);
         WorkOrder med = ticket(TicketPriority.medium);
         WorkOrder low = ticket(TicketPriority.low);
-        when(repo.findSlaBreached(any(), anyList())).thenReturn(List.of(crit, high, med, low));
+        List<WorkOrder> all = List.of(crit, high, med, low);
+        all.forEach(w -> {
+            w.setStatus(com.smms.enums.TicketStatus.IN_PROGRESS);
+            w.setSlaDeadline(java.time.Instant.now().minusSeconds(60));
+            when(repo.findById(w.getId())).thenReturn(java.util.Optional.of(w));
+        });
+        when(repo.findSlaBreached(any(), anyList())).thenReturn(all);
 
-        new SlaScheduler(repo, ns).checkBreaches();
+        scheduler(repo, ns, esc).runScheduledPass();
 
-        verify(repo).markSlaBreached(anyList());
-        verify(ns).notifyEscalation(crit);
-        verify(ns).notifyEscalation(high);
-        verify(ns, never()).notifyEscalation(med);
-        verify(ns, never()).notifyEscalation(low);
+        // every breached ticket is flagged (entity update) and gets a level-1 row; only critical/high notify
+        all.forEach(w -> assertThat(w.isSlaBreached()).isTrue());
+        verify(esc, times(4)).insertIgnore(any(), any(), any(), eq(1), eq("sla_breach"), any(), any());
+        verify(ns).notifyEscalation(crit, 1);
+        verify(ns).notifyEscalation(high, 1);
+        verify(ns, never()).notifyEscalation(eq(med), anyInt());
+        verify(ns, never()).notifyEscalation(eq(low), anyInt());
     }
 
     @Test
     void schedulerDoesNothingWhenNothingBreached() {
         WorkOrderRepository repo = mock(WorkOrderRepository.class);
         NotificationService ns = mock(NotificationService.class);
+        com.smms.workflow.EscalationRepository esc = mock(com.smms.workflow.EscalationRepository.class);
         when(repo.findSlaBreached(any(), anyList())).thenReturn(List.of());
-        new SlaScheduler(repo, ns).checkBreaches();
+        scheduler(repo, ns, esc).runScheduledPass();
         verifyNoInteractions(ns);
-        verify(repo, never()).markSlaBreached(anyList());
+        verify(repo, never()).saveAndFlush(any());
     }
 
     @Test

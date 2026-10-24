@@ -27,10 +27,30 @@ public interface WorkOrderRepository extends JpaRepository<WorkOrder, UUID>,
         SELECT * FROM work_orders
         WHERE sla_deadline < :now
           AND sla_breached = false
+          AND sla_paused_at IS NULL
           AND status::text NOT IN (:excludedStatuses)
           AND deleted_at IS NULL
         """, nativeQuery = true)
     List<WorkOrder> findSlaBreached(
+        @Param("now") Instant now,
+        @Param("excludedStatuses") List<String> excludedStatuses);
+
+    /**
+     * Breached, still open, not paused tickets that have a level-1 escalation raised by this system
+     * (legacy rows never trigger an automatic level 2) and no level 2/3 yet.
+     */
+    @Query(value = """
+        SELECT w.* FROM work_orders w
+        WHERE w.deleted_at IS NULL AND w.tenant_id IS NOT NULL
+          AND w.sla_breached = true AND w.sla_paused_at IS NULL
+          AND w.sla_deadline < :now
+          AND w.status::text NOT IN (:excludedStatuses)
+          AND EXISTS (SELECT 1 FROM work_order_escalations e
+                      WHERE e.work_order_id = w.id AND e.level = 1 AND e.trigger_kind <> 'legacy_breach')
+          AND NOT EXISTS (SELECT 1 FROM work_order_escalations e
+                          WHERE e.work_order_id = w.id AND e.level >= 2)
+        """, nativeQuery = true)
+    List<WorkOrder> findLevel2Candidates(
         @Param("now") Instant now,
         @Param("excludedStatuses") List<String> excludedStatuses);
 

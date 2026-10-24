@@ -40,6 +40,10 @@ public class Attachment {
     @Column(name = "upload_request_id")
     private UUID uploadRequestId;
 
+    /** "before" / "after" photo of the work (V25); null for a general attachment. */
+    @Column(name = "photo_phase", length = 10)
+    private String photoPhase;
+
     /** Defence in depth: always the tenant of the parent, derived in {@link #deriveTenant()}. */
     @Column(name = "tenant_id", updatable = false)
     private UUID tenantId;

@@ -77,8 +77,15 @@ public class AttachmentService {
      * first so the key cannot be used to probe a work order the actor may not see.
      */
     public UploadOutcome upload(UUID workOrderId, List<MultipartFile> files, User actor, String idempotencyKey) {
+        return upload(workOrderId, files, actor, idempotencyKey, null);
+    }
+
+    /** Optional {@code phase} ("before" or "after") marks the files as before/after photos; part of the fingerprint. */
+    public UploadOutcome upload(UUID workOrderId, List<MultipartFile> files, User actor, String idempotencyKey,
+                                String phase) {
         // Same visibility rule as the ticket itself (404 when out of scope), checked before any file I/O
         WorkOrder wo = accessPolicy.requireReadable(workOrderId, actor);
+        final String photoPhase = normalizePhase(phase);
 
         if (idempotencyKey != null && !IDEMPOTENCY_KEY.matcher(idempotencyKey).matches()) {
             throw new IllegalArgumentException("Idempotency-Key must be 8-64 characters: letters, digits, '-' or '_'");
@@ -91,7 +98,7 @@ public class AttachmentService {
 
         UUID requestId = null;
         if (idempotencyKey != null && !files.isEmpty()) {
-            String fingerprint = fingerprint(workOrderId, files);
+            String fingerprint = fingerprint(workOrderId, files, photoPhase);
             requestId = UUID.randomUUID();
             if (uploadRequestRepo.claim(requestId, actor.getId(), workOrderId, idempotencyKey, fingerprint) == 0) {
                 UploadRequest existing = uploadRequestRepo.findByUserIdAndIdemKey(actor.getId(), idempotencyKey)
@@ -127,6 +134,7 @@ public class AttachmentService {
                     .fileSize((int) file.getSize())
                     .mimeType(MIME_BY_EXTENSION.get(extensionOf(file.getOriginalFilename())))
                     .uploadRequestId(requestId)
+                    .photoPhase(photoPhase)
                     .build());
                 names.add(sanitize(file.getOriginalFilename()));
             }
@@ -161,6 +169,7 @@ public class AttachmentService {
                 .mimeType(a.getMimeType())
                 .createdAt(a.getCreatedAt())
                 .uploadedById(a.getUploadedBy() == null ? null : a.getUploadedBy().getId())
+                .photoPhase(a.getPhotoPhase())
                 .build())
             .toList();
     }
@@ -234,7 +243,16 @@ public class AttachmentService {
     }
 
     /** sha-256 over the work order id and the sorted (name, size, sha-256 of content) of every file. */
-    private static String fingerprint(UUID workOrderId, List<MultipartFile> files) {
+    private static String normalizePhase(String phase) {
+        if (phase == null || phase.isBlank()) return null;
+        String p = phase.trim().toLowerCase(Locale.ROOT);
+        if (!p.equals("before") && !p.equals("after")) {
+            throw new IllegalArgumentException("phase must be 'before' or 'after'");
+        }
+        return p;
+    }
+
+    private static String fingerprint(UUID workOrderId, List<MultipartFile> files, String phase) {
         List<String> parts = new ArrayList<>();
         for (MultipartFile f : files) {
             parts.add(f.getOriginalFilename() + "|" + f.getSize() + "|" + sha256(f));
@@ -242,6 +260,8 @@ public class AttachmentService {
         Collections.sort(parts);
         MessageDigest md = digest();
         md.update(workOrderId.toString().getBytes(StandardCharsets.UTF_8));
+        // a phase changes the meaning of the request; no phase keeps the pre-V25 fingerprint
+        if (phase != null) md.update(("\nphase=" + phase).getBytes(StandardCharsets.UTF_8));
         for (String p : parts) md.update(("\n" + p).getBytes(StandardCharsets.UTF_8));
         return HexFormat.of().formatHex(md.digest());
     }

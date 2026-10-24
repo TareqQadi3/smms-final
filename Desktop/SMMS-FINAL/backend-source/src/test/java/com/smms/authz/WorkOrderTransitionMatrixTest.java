@@ -72,7 +72,8 @@ class WorkOrderTransitionMatrixTest {
         service = new WorkOrderService(workOrderRepo, historyRepo, new WorkflowEngine(), notifications,
             mapper, mock(PlanEnforcementService.class), mock(TenantSecurityService.class), accessPolicy,
             mock(EntityManager.class), mock(UserRepository.class),
-            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class));
+            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class), mock(com.smms.repository.DepartmentRepository.class),
+            mock(com.smms.workflow.InfoRequestRepository.class), mock(com.smms.workflow.EscalationRepository.class));
         when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
     }
 

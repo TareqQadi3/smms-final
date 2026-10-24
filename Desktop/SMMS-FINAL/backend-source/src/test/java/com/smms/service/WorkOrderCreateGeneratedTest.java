@@ -54,7 +54,8 @@ class WorkOrderCreateGeneratedTest {
         assets = mock(AssetRepository.class);
         service = new WorkOrderService(workOrderRepo, historyRepo, new WorkflowEngine(), notifications,
             mock(WorkOrderMapper.class), plan, mock(TenantSecurityService.class), mock(WorkOrderAccessPolicy.class),
-            em, mock(UserRepository.class), new WorkOrderHistoryWriter(historyRepo), controlRooms, assets);
+            em, mock(UserRepository.class), new WorkOrderHistoryWriter(historyRepo), controlRooms, assets, mock(com.smms.repository.DepartmentRepository.class),
+            mock(com.smms.workflow.InfoRequestRepository.class), mock(com.smms.workflow.EscalationRepository.class));
 
         center = new Center();
         center.setId(UUID.randomUUID());
