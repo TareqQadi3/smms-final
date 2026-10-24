@@ -32,6 +32,38 @@ spring:
     serialization:
       write-dates-as-timestamps: false
 
+# ── Feature program 1 settings (all optional: the defaults below equal the defaults in code) ──
+app:
+  # Preventive-maintenance generator (daily run, Asia/Riyadh)
+  pm:
+    enabled: true
+    cron: "0 20 2 * * *"
+    zone: Asia/Riyadh
+    batch-size: 200
+    overdue-batch-size: 200
+  # Inventory ledger and reports
+  inventory:
+    lock-timeout-ms: 5000
+    zone: Asia/Riyadh
+    max-range-days: 366
+    default-range-days: 30
+    low-stock-notifications: true
+  # Notification delivery worker. Nothing is sent externally unless a channel is enabled below.
+  notifications:
+    scheduler-enabled: true
+    dispatch-ms: 30000
+    enqueue-ms: 30000
+    batch-size: 50
+    max-attempts: 6
+    lease-seconds: 300
+    lookback-hours: 24
+  # SLA escalation of overdue work orders
+  escalation:
+    enabled: true
+    check-ms: 300000
+    notify-priorities: critical,high
+    level2-factor: 0.5
+
 server:
   port: ${SERVER_PORT:9090}
   shutdown: graceful
