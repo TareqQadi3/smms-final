@@ -579,4 +579,59 @@ class AttachmentServiceTest {
         when(attachmentRepo.findByIdAndWorkOrderId(a.getId(), woId)).thenReturn(Optional.of(a));
         assertThatThrownBy(() -> service.download(woId, a.getId(), actor)).isInstanceOf(ResourceNotFoundException.class);
     }
+
+    // ── before/after photo phase (V25) ──
+
+    @Test
+    void phaseIsStoredNormalizedAndExposed() throws Exception {
+        UUID id = UUID.randomUUID();
+        User actor = user();
+        WorkOrder wo = new WorkOrder();
+        wo.setId(id);
+        wo.setStatus(com.smms.enums.TicketStatus.IN_PROGRESS);
+        when(accessPolicy.requireReadable(id, actor)).thenReturn(wo);
+        MockMultipartFile a = new MockMultipartFile("file", "a.png", "image/png", PNG);
+
+        service.upload(id, List.of(a), actor, null, " After ");
+
+        org.mockito.ArgumentCaptor<Attachment> cap = org.mockito.ArgumentCaptor.forClass(Attachment.class);
+        verify(attachmentRepo).save(cap.capture());
+        assertThat(cap.getValue().getPhotoPhase()).isEqualTo("after");
+        when(attachmentRepo.findByWorkOrderId(id)).thenReturn(List.of(cap.getValue()));
+        assertThat(service.list(id, actor).get(0).getPhotoPhase()).isEqualTo("after");
+        // no phase = general attachment
+        clearInvocations(attachmentRepo);
+        service.upload(id, List.of(a), actor);
+        verify(attachmentRepo).save(cap.capture());
+        assertThat(cap.getValue().getPhotoPhase()).isNull();
+    }
+
+    @Test
+    void invalidPhaseIs400AndWritesNothing() {
+        UUID id = UUID.randomUUID();
+        User actor = user();
+        when(accessPolicy.requireReadable(id, actor)).thenReturn(new WorkOrder());
+        MockMultipartFile a = new MockMultipartFile("file", "a.png", "image/png", PNG);
+        assertThatThrownBy(() -> service.upload(id, List.of(a), actor, null, "during"))
+            .isInstanceOf(IllegalArgumentException.class);
+        verify(attachmentRepo, never()).save(any());
+    }
+
+    @Test
+    void phaseIsPartOfTheIdempotencyFingerprint() throws Exception {
+        UUID id = UUID.randomUUID();
+        User actor = user();
+        WorkOrder wo = new WorkOrder();
+        wo.setId(id);
+        wo.setStatus(com.smms.enums.TicketStatus.IN_PROGRESS);
+        when(accessPolicy.requireReadable(id, actor)).thenReturn(wo);
+        MockMultipartFile a = new MockMultipartFile("file", "a.png", "image/png", PNG);
+        when(uploadRepo.claim(any(), any(), any(), any(), any())).thenReturn(1);
+        org.mockito.ArgumentCaptor<String> fp = org.mockito.ArgumentCaptor.forClass(String.class);
+        service.upload(id, List.of(a), actor, "key-0000001", "before");
+        service.upload(id, List.of(a), actor, "key-0000002", "after");
+        service.upload(id, List.of(a), actor, "key-0000003", null);
+        verify(uploadRepo, times(3)).claim(any(), any(), any(), any(), fp.capture());
+        assertThat(fp.getAllValues()).doesNotHaveDuplicates();
+    }
 }

@@ -61,7 +61,8 @@ class WorkOrderWorkflowM3Test {
         service = new WorkOrderService(workOrderRepo, historyRepo, new WorkflowEngine(), notificationService,
             mapper, mock(PlanEnforcementService.class), tenantSecurity, accessPolicy,
             mock(EntityManager.class), mock(UserRepository.class),
-            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class));
+            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class), mock(com.smms.repository.DepartmentRepository.class),
+            mock(com.smms.workflow.InfoRequestRepository.class), mock(com.smms.workflow.EscalationRepository.class));
         when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());
     }
 

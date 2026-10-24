@@ -26,6 +26,8 @@ public class UserResponse {
     String unitNumber;
 
     // Department
+    /** Linked department row (null until linked); the free-text name below stays as display fallback. */
+    UUID departmentId;
     String departmentName;
     String departmentSupervisor;
     String departmentEmail;

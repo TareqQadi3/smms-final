@@ -17,4 +17,6 @@ public class CreateWorkOrderRequest {
     String description;
     String locationDetail;
     @NotNull TicketPriority priority;
+    /** Optional asset of the same center and tenant; the department is derived from the requester, never sent. */
+    UUID assetId;
 }

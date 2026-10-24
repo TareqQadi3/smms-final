@@ -45,7 +45,8 @@ class EndpointAuthorizationCoverageTest {
     private static final Map<String, String> ALLOWLIST = Map.of(
         "/api/auth/", "public by SecurityConfig: login, refresh, logout",
         "/api/users/me", "acts on the caller only (profile, change-password)",
-        "/api/notifications", "service reads and writes only the caller's rows");
+        "/api/notifications", "service reads and writes only the caller's rows",
+        "/api/public/", "token-based minimal status, rate limited, feature flag");
 
     private static final List<String> SENSITIVE_PREFIXES = List.of(
         "/api/admin", "/api/platform", "/api/import", "/api/users", "/api/maintenance-types");

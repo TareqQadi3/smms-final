@@ -46,6 +46,12 @@ public class WorkOrderController {
     private final WorkOrderService workOrderService;
     private final AttachmentService attachmentService;
 
+    /** Optional Idempotency-Key support on transitions (null only in unit tests that build the controller by hand). */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.smms.idempotency.IdempotencyService idempotency;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+
     @PostMapping
     @PreAuthorize("hasAnyRole('control_room','resident','department','other','technician','system_admin','maintenance_manager','hospital_supervisor')")
     public ResponseEntity<WorkOrderResponse> create(@Valid @RequestBody CreateWorkOrderRequest req,
@@ -80,8 +86,20 @@ public class WorkOrderController {
     @PostMapping("/{id}/transition")
     public ResponseEntity<WorkOrderResponse> transition(@PathVariable UUID id,
                                                         @Valid @RequestBody TransitionRequest req,
+                                                        @RequestHeader(value = "Idempotency-Key", required = false) String key,
                                                         @CurrentUser User actor) {
-        return ResponseEntity.ok(workOrderService.transition(id, req, actor));
+        if (key == null || key.isBlank() || idempotency == null) {
+            return ResponseEntity.ok(workOrderService.transition(id, req, actor));
+        }
+        // same key + same request: replay of the current state (200 + Idempotent-Replayed), no second transition
+        var out = idempotency.execute(actor, "wo.transition", key,
+            com.smms.idempotency.IdempotencyService.fingerprint(objectMapper, req, id),
+            recId -> new com.smms.idempotency.IdempotencyService.Result<>(
+                workOrderService.transition(id, req, actor), id),
+            ref -> workOrderService.getById(ref, actor));
+        ResponseEntity.BodyBuilder b = ResponseEntity.ok();
+        if (out.replayed()) b.header("Idempotent-Replayed", "true");
+        return b.body(out.body());
     }
 
     /**
@@ -201,8 +219,12 @@ public class WorkOrderController {
     public ResponseEntity<?> upload(@PathVariable UUID id,
                                     @RequestParam("file") List<MultipartFile> files,
                                     @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+                                    @RequestParam(value = "phase", required = false) String phase,
                                     @CurrentUser User actor) {
-        return switch (attachmentService.upload(id, files, actor, idempotencyKey)) {
+        var outcome = phase == null
+            ? attachmentService.upload(id, files, actor, idempotencyKey)
+            : attachmentService.upload(id, files, actor, idempotencyKey, phase);
+        return switch (outcome) {
             case CREATED -> ResponseEntity.status(HttpStatus.CREATED).build();
             case REPLAYED -> ResponseEntity.ok().header("Idempotent-Replayed", "true").build();
             case KEY_REUSED -> ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(

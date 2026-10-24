@@ -65,7 +65,8 @@ class WorkOrderServiceTest {
         service = new WorkOrderService(workOrderRepo, historyRepo, workflowEngine,
             notificationService, mapper, mock(PlanEnforcementService.class),
             tenantSecurity, accessPolicy, em, userRepo,
-            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class));
+            new WorkOrderHistoryWriter(historyRepo), mock(ControlRoomRepository.class), mock(AssetRepository.class), mock(com.smms.repository.DepartmentRepository.class),
+            mock(com.smms.workflow.InfoRequestRepository.class), mock(com.smms.workflow.EscalationRepository.class));
         when(mapper.toResponse(any(WorkOrder.class))).thenAnswer(i -> com.smms.dto.response.WorkOrderResponse.builder().build());
         // create() also looks for duplicate candidates; default to none
         when(workOrderRepo.findAll(any(Specification.class), any(Pageable.class))).thenReturn(Page.empty());

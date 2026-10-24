@@ -14,6 +14,7 @@ public interface UserMapper {
     @Mapping(target = "complexName",          source = "complexName")
     @Mapping(target = "buildingNumber",       source = "buildingNumber")
     @Mapping(target = "unitNumber",           source = "unitNumber")
+    @Mapping(target = "departmentId",         source = "department.id")
     @Mapping(target = "departmentName",       source = "departmentName")
     @Mapping(target = "departmentSupervisor", source = "departmentSupervisor")
     @Mapping(target = "departmentEmail",      source = "departmentEmail")

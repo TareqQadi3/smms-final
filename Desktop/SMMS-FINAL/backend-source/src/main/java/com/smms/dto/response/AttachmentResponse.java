@@ -15,4 +15,6 @@ public class AttachmentResponse {
     String mimeType;
     Instant createdAt;
     UUID uploadedById;
+    /** "before", "after" or null (general attachment). */
+    String photoPhase;
 }
