@@ -19,4 +19,12 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     @Modifying
     @Query("UPDATE Notification n SET n.read = true WHERE n.user.id = :userId AND n.read = false")
     void markAllReadByUser(@Param("userId") UUID userId);
+
+    /** Marks one notification read, only when it belongs to the user. Returns rows changed (0 or 1). */
+    @Modifying
+    @Query("UPDATE Notification n SET n.read = true WHERE n.id = :id AND n.user.id = :userId")
+    int markReadByIdAndUser(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    @Query("SELECT COUNT(n) FROM Notification n WHERE n.id = :id AND n.user.id = :userId")
+    long countByIdAndUser(@Param("id") UUID id, @Param("userId") UUID userId);
 }
