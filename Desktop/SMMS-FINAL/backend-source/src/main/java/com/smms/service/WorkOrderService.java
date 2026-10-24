@@ -123,6 +123,7 @@ public class WorkOrderService {
                 || !asset.getCenter().getId().equals(cr.getCenter().getId())) {
             throw new ResourceNotFoundException("Asset not found");
         }
+        if (asset.isDecommissioned()) throw new WorkflowException("Asset is decommissioned and cannot be linked to a ticket");
         return asset;
     }
 

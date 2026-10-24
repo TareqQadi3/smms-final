@@ -21,8 +21,6 @@ public interface WorkOrderMapper {
     @Mapping(target = "escalationLevel", ignore = true)
     WorkOrderResponse toResponse(WorkOrder wo);
 
-    // assetCode is mapped when the asset register columns exist (V40)
-    @Mapping(target = "assetCode", ignore = true)
     AssetRef toAssetRef(Asset asset);
 
     @Mapping(target = "id",       source = "id")

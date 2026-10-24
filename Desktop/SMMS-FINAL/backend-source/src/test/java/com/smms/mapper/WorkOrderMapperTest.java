@@ -35,7 +35,7 @@ class WorkOrderMapperTest {
 
     @Test
     void mapsAssetDepartmentPauseEmergencyAndConfirmation() {
-        Asset asset = Asset.builder().name("Pump").nameAr("مضخة").build();
+        Asset asset = Asset.builder().assetCode("AST-001").name("Pump").nameAr("مضخة").build();
         asset.setId(UUID.randomUUID());
         Department dep = Department.builder().name("ER").nameAr("طوارئ").code("ER").build();
         dep.setId(UUID.randomUUID());
@@ -54,7 +54,7 @@ class WorkOrderMapperTest {
         assertThat(r.getAsset().getId()).isEqualTo(asset.getId());
         assertThat(r.getAsset().getName()).isEqualTo("Pump");
         assertThat(r.getAsset().getNameAr()).isEqualTo("مضخة");
-        assertThat(r.getAsset().getAssetCode()).isNull();
+        assertThat(r.getAsset().getAssetCode()).isEqualTo("AST-001");
         assertThat(r.getDepartmentId()).isEqualTo(dep.getId());
         assertThat(r.isEmergency()).isTrue();
         assertThat(r.getEmergencyDeclaredAt()).isEqualTo(now);

@@ -6,8 +6,7 @@ import lombok.Data;
 import java.util.UUID;
 
 /**
- * Short asset reference embedded in other responses. {@code assetCode} stays null until the asset
- * register migration (V40) adds the column and maps it.
+ * Short asset reference embedded in other responses ({@code assetCode} comes from the asset register, V40).
  */
 @Data @Builder
 public class AssetRef {

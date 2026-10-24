@@ -112,6 +112,17 @@ class WorkOrderCreateAssetDepartmentTest {
     }
 
     @Test
+    void decommissionedAssetIsRejectedWith422() {
+        Asset a = asset(center);
+        a.setDecommissionedAt(java.time.Instant.now());
+        when(assetRepo.findByIdAndTenantIdAndDeletedAtIsNull(a.getId(), tenant)).thenReturn(Optional.of(a));
+        User cr = Fixtures.user(UserRole.control_room, center, null, tenant);
+        assertThatThrownBy(() -> service.create(req(a.getId()), cr))
+            .isInstanceOf(com.smms.exception.WorkflowException.class).hasMessageContaining("decommissioned");
+        verify(workOrderRepo, never()).save(any());
+    }
+
+    @Test
     void departmentIsDerivedFromTheDepartmentRequesterNotTheClient() {
         Department d = Department.builder().center(center).name("D").nameAr("D").code("D").build();
         d.setId(UUID.randomUUID());
