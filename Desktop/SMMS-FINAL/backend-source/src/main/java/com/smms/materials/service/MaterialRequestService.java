@@ -23,6 +23,7 @@ import com.smms.materials.entity.MaterialRequestStatus;
 import com.smms.materials.repository.MaterialRequestRepository;
 import com.smms.procurement.CenterScope;
 import com.smms.procurement.Quantities;
+import com.smms.procurement.dto.PurchaseOrderDtos;
 import com.smms.procurement.dto.PurchaseOrderDtos.PoLineRequest;
 import com.smms.procurement.dto.PurchaseOrderDtos.PurchaseOrderResponse;
 import com.smms.procurement.service.ProcurementNotifier;
@@ -228,7 +229,7 @@ public class MaterialRequestService {
     }
 
     @Transactional
-    public MaterialRequestResponse reject(User actor, UUID id, ReasonRequest req) {
+    public MaterialRequestResponse reject(User actor, UUID id, MrReasonRequest req) {
         CenterScope.requireRole(actor, DECIDE);
         MaterialRequest mr = loadStaff(id, actor, true);
         checkVersion(mr, req.version());
@@ -255,15 +256,16 @@ public class MaterialRequestService {
             () -> doReserve(actor, id, body == null ? null : body.version()));
     }
 
-    MaterialRequest doReserve(User actor, UUID id, Long version) {
+    public MaterialRequest doReserve(User actor, UUID id, Long version) {
         MaterialRequest mr = loadStaff(id, actor, true);
         checkVersion(mr, version);
         requireStatus(mr, MaterialRequestStatus.approved);
         ledger.requireWarehouse(mr.getWarehouseId(), actor, StockLedger.Access.OPERATE);
         for (MaterialRequestLine l : sortedLines(mr)) {
-            BigDecimal delta = l.reserveAll();
+            BigDecimal delta = l.toReserve();
             // a shortage raises InsufficientStockException (409) and rolls the whole reservation back
             if (delta.signum() > 0) ledger.reserve(mr.getWarehouseId(), l.getItemId(), delta);
+            l.reserveAll();
         }
         mr.transitionTo(MaterialRequestStatus.reserved);
         repo.saveAndFlush(mr);
@@ -276,7 +278,7 @@ public class MaterialRequestService {
         return idempotent(actor, "mr.issue", key, body, id, () -> doIssue(actor, id, body));
     }
 
-    MaterialRequest doIssue(User actor, UUID id, IssueRequest body) {
+    public MaterialRequest doIssue(User actor, UUID id, IssueRequest body) {
         MaterialRequest mr = loadStaff(id, actor, true);
         checkVersion(mr, body.version());
         if (mr.getStatus() != MaterialRequestStatus.approved && mr.getStatus() != MaterialRequestStatus.reserved
@@ -311,7 +313,7 @@ public class MaterialRequestService {
         return idempotent(actor, "mr.return", key, body, id, () -> doReturn(actor, id, body));
     }
 
-    MaterialRequest doReturn(User actor, UUID id, ReturnRequest body) {
+    public MaterialRequest doReturn(User actor, UUID id, ReturnRequest body) {
         MaterialRequest mr = loadStaff(id, actor, true);
         checkVersion(mr, body.version());
         requireStatus(mr, MaterialRequestStatus.issued);
@@ -343,7 +345,7 @@ public class MaterialRequestService {
         return idempotent(actor, "mr.consume", key, body, id, () -> doConsume(actor, id, body));
     }
 
-    MaterialRequest doConsume(User actor, UUID id, ConsumeRequest body) {
+    public MaterialRequest doConsume(User actor, UUID id, ConsumeRequest body) {
         MaterialRequest mr = loadReadable(id, actor, true);
         WorkOrder wo = mr.getWorkOrder();
         if (wo.getAssignedTo() == null || !wo.getAssignedTo().getId().equals(actor.getId())) {
@@ -390,7 +392,7 @@ public class MaterialRequestService {
     // ── cancel ───────────────────────────────────────────────
 
     @Transactional
-    public MaterialRequestResponse cancel(User actor, UUID id, ReasonRequest req) {
+    public MaterialRequestResponse cancel(User actor, UUID id, MrReasonRequest req) {
         MaterialRequest mr = loadReadable(id, actor, true);
         boolean ownWhileSubmitted = mr.getStatus() == MaterialRequestStatus.submitted
             && mr.getRequestedBy().getId().equals(actor.getId());
@@ -422,7 +424,7 @@ public class MaterialRequestService {
     // ── purchase order for the shortage ──────────────────────
 
     @Transactional
-    public PurchaseOrderResponse createPurchaseOrder(User actor, UUID id, PurchaseOrderRequest req) {
+    public PurchaseOrderResponse createPurchaseOrder(User actor, UUID id, ShortagePoRequest req) {
         CenterScope.requireRole(actor, PO);
         MaterialRequest mr = loadStaff(id, actor, false);
         MaterialRequestStatus s = mr.getStatus();
@@ -435,7 +437,7 @@ public class MaterialRequestService {
             if (shortage.signum() > 0) lines.add(new PoLineRequest(l.getItemId(), shortage, null));
         }
         if (lines.isEmpty()) throw new WorkflowException("No shortage: the approved quantities are available");
-        return purchaseOrders.create(actor, new com.smms.procurement.dto.PurchaseOrderDtos.PurchaseOrderRequest(
+        return purchaseOrders.create(actor, new PurchaseOrderDtos.PurchaseOrderRequest(
             mr.getCenter().getId(), req.supplierId(), mr.getWarehouseId(), null,
             "Created from material request " + mr.getRequestNumber(), mr.getWorkOrder().getId(), mr.getId(), lines, null));
     }

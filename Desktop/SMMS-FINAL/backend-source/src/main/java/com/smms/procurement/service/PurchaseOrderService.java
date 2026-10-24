@@ -257,7 +257,7 @@ public class PurchaseOrderService {
                 () -> new ResourceNotFoundException("Receipt not found"))));
     }
 
-    PoReceipt doReceive(User actor, UUID poId, ReceiveRequest req, UUID idemRecordId) {
+    public PoReceipt doReceive(User actor, UUID poId, ReceiveRequest req, UUID idemRecordId) {
         PurchaseOrder po = load(poId, actor, true);
         if (!po.getStatus().canReceive()) {
             throw new WorkflowException("Purchase order in status " + po.getStatus() + " cannot receive goods");

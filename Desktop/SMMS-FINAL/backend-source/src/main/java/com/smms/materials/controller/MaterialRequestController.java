@@ -75,7 +75,7 @@ public class MaterialRequestController {
     @PostMapping("/api/material-requests/{id}/reject")
     @PreAuthorize(DECIDE)
     public MaterialRequestResponse reject(@CurrentUser User actor, @PathVariable UUID id,
-                                          @Valid @RequestBody ReasonRequest req) {
+                                          @Valid @RequestBody MrReasonRequest req) {
         return service.reject(actor, id, req);
     }
 
@@ -121,14 +121,14 @@ public class MaterialRequestController {
     @PostMapping("/api/material-requests/{id}/cancel")
     @PreAuthorize(CANCEL)
     public MaterialRequestResponse cancel(@CurrentUser User actor, @PathVariable UUID id,
-                                          @Valid @RequestBody ReasonRequest req) {
+                                          @Valid @RequestBody MrReasonRequest req) {
         return service.cancel(actor, id, req);
     }
 
     @PostMapping("/api/material-requests/{id}/purchase-order")
     @PreAuthorize(CLOSE)
     public ResponseEntity<PurchaseOrderResponse> purchaseOrder(@CurrentUser User actor, @PathVariable UUID id,
-                                                              @Valid @RequestBody PurchaseOrderRequest req) {
+                                                              @Valid @RequestBody ShortagePoRequest req) {
         return ResponseEntity.status(HttpStatus.CREATED).body(service.createPurchaseOrder(actor, id, req));
     }
 

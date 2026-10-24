@@ -33,7 +33,7 @@ public final class MaterialRequestDtos {
     public record ApproveRequest(@Size(max = 1000) String note, @Size(max = 30) List<@Valid @NotNull ApproveLine> lines,
                                  Long version) {}
 
-    public record ReasonRequest(@NotBlank @Size(min = 5, max = 1000) String reason, Long version) {}
+    public record MrReasonRequest(@NotBlank @Size(min = 5, max = 1000) String reason, Long version) {}
 
     public record VersionRequest(Long version) {}
 
@@ -49,7 +49,7 @@ public final class MaterialRequestDtos {
     public record ReturnRequest(@NotEmpty @Size(max = 30) List<@Valid @NotNull LineQuantity> lines,
                                 @NotBlank @Size(min = 5, max = 1000) String reason, Long version) {}
 
-    public record PurchaseOrderRequest(@NotNull UUID supplierId) {}
+    public record ShortagePoRequest(@NotNull UUID supplierId) {}
 
     public record WorkOrderSummary(UUID id, String ticketNumber, TicketStatus status) {}
 

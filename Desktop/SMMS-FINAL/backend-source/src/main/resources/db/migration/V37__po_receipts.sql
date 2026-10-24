@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS po_receipts (
     note                  TEXT,
     idempotency_record_id UUID,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_receipt_id_tenant UNIQUE (id, tenant_id),
     CONSTRAINT fk_receipt_po FOREIGN KEY (po_id, tenant_id) REFERENCES purchase_orders(id, tenant_id),
     CONSTRAINT fk_receipt_warehouse FOREIGN KEY (warehouse_id, tenant_id) REFERENCES warehouses(id, tenant_id)
