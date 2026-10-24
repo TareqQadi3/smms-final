@@ -14,8 +14,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { CheckCircle, Plus } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { StateMessage } from '@/components/ui/state-message';
+import { useModuleT } from '@/lib/module-i18n';
+import { workflowDict } from '@/modules/workflow/i18n';
+import { workflowApi } from '@/modules/workflow/api';
+import { canDeclareEmergencyAtCreate, canReadAssets } from '@/modules/workflow/permissions';
+import { AssetSelectField } from '@/components/workflow/AssetSelectField';
+import { workflowSlots } from '@/components/workflow/slots';
+import '@/components/workflow/slotsWiring';
 
-type CR = { id: string; name: string; nameAr?: string };
+type CR = { id: string; name: string; nameAr?: string; center?: { id: string } };
 type MT = { id: string; name: string; nameAr: string; controlRoomType: string };
 const PRIORITIES: TicketPriority[] = ['critical','high','medium','low'];
 // Backend SubType enum values keyed by maintenance-type display name (English, lowercased).
@@ -35,6 +42,10 @@ export default function NewRequestPage() {
   const { lang, user } = useAuthStore();
   const tr   = useT(lang);
   const isAr = lang === 'ar';
+  const { t: wt } = useModuleT(workflowDict);
+  const showAsset = canReadAssets(user?.role);
+  const showEmergency = canDeclareEmergencyAtCreate(user?.role);
+  const AssetField = workflowSlots.AssetPicker ?? AssetSelectField;
 
   const [myOrders,     setMyOrders]     = useState<WorkOrder[]>([]);
   const [controlRooms, setControlRooms] = useState<CR[]>([]);
@@ -48,6 +59,9 @@ export default function NewRequestPage() {
     description: '', locationDetail: '', priority: 'medium' as TicketPriority,
   });
   const [submitting, setSubmitting] = useState(false);
+  const [assetId,    setAssetId]    = useState('');
+  const [emergency,  setEmergency]  = useState(false);
+  const [emergencyReason, setEmergencyReason] = useState('');
   const [success,    setSuccess]    = useState(false);
   const [err,        setErr]        = useState('');
 
@@ -72,6 +86,7 @@ export default function NewRequestPage() {
   /* ISSUE 3 FIX: load maintenance types filtered by selected control room */
   const handleCRChange = async (crId: string) => {
     setForm(f => ({ ...f, controlRoomId: crId, subType: '' }));
+    setAssetId(''); // assets belong to the center of the chosen control room
     setMaintTypes([]);
     if (!crId) return;
     setMtLoading(true);
@@ -86,16 +101,32 @@ export default function NewRequestPage() {
     e.preventDefault();
     setErr('');
     setSubmitting(true);
+    if (emergency && emergencyReason.trim().length < 5) {
+      setErr(wt('reasonTooShort'));
+      setSubmitting(false);
+      return;
+    }
     try {
-      await workOrderApi.create({
+      const created = await workOrderApi.create({
         controlRoomId: form.controlRoomId,
         subType:       form.subType,     // already an enum value (see toSubTypeValue)
         title:         form.title,
         description:   form.description,
         locationDetail:form.locationDetail,
         priority:      form.priority,
+        ...(assetId ? { assetId } : {}),
       });
+      // The create API has no emergency flag: declare it right after creation (server roles apply).
+      if (emergency && created.data?.id) {
+        try {
+          await workflowApi.declareEmergency(created.data.id, emergencyReason.trim());
+        } catch (ex2: unknown) {
+          const m2 = (ex2 as { response?: { data?: { message?: string } } })?.response?.data?.message ?? '';
+          setErr(wt('createdButEmergencyFailed', { m: m2 || wt('errGeneric') }));
+        }
+      }
       setSuccess(true);
+      setAssetId(''); setEmergency(false); setEmergencyReason('');
       setForm({ controlRoomId:'', subType:'', title:'', description:'', locationDetail:'', priority:'medium' });
       setMaintTypes([]);
       const res = await workOrderApi.getAll({ page: 0, size: 10 });
@@ -204,6 +235,14 @@ export default function NewRequestPage() {
                     </div>
                   </div>
 
+                  {showAsset && (
+                    <AssetField
+                      value={assetId}
+                      onChange={(v) => setAssetId(v)}
+                      centerId={controlRooms.find(c => c.id === form.controlRoomId)?.center?.id}
+                    />
+                  )}
+
                   <div className="space-y-1.5">
                     <Label>{tr.title} *</Label>
                     <Input required value={form.title}
@@ -222,6 +261,26 @@ export default function NewRequestPage() {
                       onChange={e => setForm(f => ({ ...f, locationDetail: e.target.value }))}
                       placeholder={isAr ? 'مثال: الطابق الثالث، غرفة 305' : 'e.g., Floor 3, Room 305'} />
                   </div>
+
+                  {showEmergency && (
+                    <div className="space-y-2 rounded-md border border-red-200 p-3">
+                      <label className="flex items-start gap-2 text-sm font-medium">
+                        <input type="checkbox" className="mt-1 h-4 w-4" checked={emergency}
+                          onChange={e => setEmergency(e.target.checked)} aria-describedby="emergency-hint" />
+                        <span>
+                          {wt('emergencyAtCreate')}
+                          <span id="emergency-hint" className="block text-xs font-normal text-muted-foreground">{wt('emergencyAtCreateHint')}</span>
+                        </span>
+                      </label>
+                      {emergency && (
+                        <div className="space-y-1.5">
+                          <Label htmlFor="emergency-reason">{wt('emergencyReasonLabel')} *</Label>
+                          <Textarea id="emergency-reason" rows={2} maxLength={1000} value={emergencyReason}
+                            onChange={e => setEmergencyReason(e.target.value)} />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <Button type="submit"
                     disabled={submitting || !form.controlRoomId || !form.title || !form.subType}
