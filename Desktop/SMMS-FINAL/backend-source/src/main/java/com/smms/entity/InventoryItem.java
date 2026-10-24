@@ -27,12 +27,27 @@ public class InventoryItem extends BaseEntity {
     @Column(length = 40)
     private String unit;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    @Builder.Default
-    private BigDecimal quantity = BigDecimal.ZERO;
+    /** LEGACY (V31 comment): stock lives in stock_balances; never written by the application. */
+    @Column(nullable = false, precision = 12, scale = 2, insertable = false, updatable = false)
+    private BigDecimal quantity;
 
     @Column(name = "reorder_level", nullable = false, precision = 12, scale = 2)
     @Builder.Default
     private BigDecimal reorderLevel = BigDecimal.ZERO;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "uom_id")
+    private com.smms.inventory.entity.UnitOfMeasure uom;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private boolean active = true;
+
+    /** Set when a low-stock notification was sent; cleared when stock rises above the reorder level. */
+    @Column(name = "low_stock_notified_at")
+    private java.time.Instant lowStockNotifiedAt;
+
+    @Column(length = 80)
+    private String category;
 }
 
