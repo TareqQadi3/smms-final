@@ -21,7 +21,7 @@ const po = (o: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
   receipts: [], ...o,
 });
 
-const names = () => screen.getAllByRole('button').map((b) => b.textContent);
+const names = () => screen.queryAllByRole('button').map((b) => b.textContent);
 
 describe('PurchaseOrderDetail', () => {
   beforeEach(() => vi.clearAllMocks());
