@@ -2,6 +2,7 @@ package com.smms.controller;
 
 import com.smms.dto.response.NotificationResponse;
 import com.smms.entity.User;
+import com.smms.notify.NotificationInboxService;
 import com.smms.service.NotificationService;
 import com.smms.util.CurrentUser;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ public class NotificationController {
     private static final Map<String, String> SORT_FIELDS = Map.of("createdAt", "createdAt");
 
     private final NotificationService notificationService;
+    private final NotificationInboxService inbox;
 
     @GetMapping
     public ResponseEntity<Page<NotificationResponse>> list(
@@ -32,7 +34,7 @@ public class NotificationController {
                                   @CurrentUser User actor) {
         Pageable pageable = PageRequests.of(page, size, sort, SORT_FIELDS,
             Sort.by(Sort.Direction.DESC, "createdAt"));
-        return ResponseEntity.ok(notificationService.list(actor.getId(), pageable));
+        return ResponseEntity.ok(inbox.list(actor.getId(), pageable));
     }
 
     @GetMapping("/unread-count")
@@ -43,6 +45,13 @@ public class NotificationController {
     @PostMapping("/read-all")
     public ResponseEntity<Void> readAll(@CurrentUser User actor) {
         notificationService.markAllRead(actor.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Marks one of the caller's own notifications read; another user's id is a 404. */
+    @PostMapping("/{id}/read")
+    public ResponseEntity<Void> markRead(@PathVariable java.util.UUID id, @CurrentUser User actor) {
+        inbox.markRead(actor.getId(), id);
         return ResponseEntity.noContent().build();
     }
 }
