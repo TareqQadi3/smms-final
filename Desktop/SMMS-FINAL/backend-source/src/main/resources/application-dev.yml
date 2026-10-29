@@ -65,6 +65,24 @@ app:
     medium: 24
     low: 48
   base-url: http://localhost:9090
+  # Public ticket status page (token link + rate limit). Enabled for local development only.
+  public-status:
+    enabled: true
+    rate-limit-per-minute: 30
+    link-ttl-days: 30
+  # Purchase orders above this total need a manager approval (empty = no limit)
+  procurement:
+    manager-approval-limit:
+  notifications:
+    email:
+      enabled: false
+      from: "SMMS <noreply@smms.local>"
+      subject-prefix: "[SMMS] "
+    sms:
+      enabled: false
+      url:
+      token: ${SMS_TOKEN:}
+      sender-id: SMMS
 
 logging:
   level:

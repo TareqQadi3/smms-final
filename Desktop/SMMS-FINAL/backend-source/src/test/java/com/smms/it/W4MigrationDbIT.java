@@ -108,7 +108,7 @@ class W4MigrationDbIT {
 
     @Test
     @Order(2)
-    void escalationReportToleratesMissingThenPresentTable() {
+    void escalationReportReadsTheRealTableAndToleratesItsAbsence() {
         ReportQueries q = new ReportQueries(new NamedParameterJdbcTemplate(jdbc));
         ReportRange range = new ReportRange(LocalDate.of(2026, 3, 1), LocalDate.of(2026, 3, 31));
         DbFixtures f = new DbFixtures(jdbc);
@@ -118,22 +118,23 @@ class W4MigrationDbIT {
         UUID z = f.workOrder(b, reqB, "in_progress", "high");
         ReportScope tenantA = new ReportScope(a.tenant(), null, null);
 
-        assertThat(q.escalationsAvailable()).isFalse();
-        assertThat(q.escalations(range, tenantA)).isEmpty();
+        // V21 (workflow program) is part of the migration chain now: the report reads the real table
+        assertThat(q.escalationsAvailable()).isTrue();
+        // tolerance: while the table is absent the report is empty and flagged unavailable
+        jdbc.execute("ALTER TABLE work_order_escalations RENAME TO work_order_escalations_hidden");
+        try {
+            assertThat(q.escalationsAvailable()).isFalse();
+            assertThat(q.escalations(range, tenantA)).isEmpty();
+        } finally {
+            jdbc.execute("ALTER TABLE work_order_escalations_hidden RENAME TO work_order_escalations");
+        }
 
-        // shape planned for the escalation table (V21 of the workflow workstream)
-        jdbc.execute("""
-            CREATE TABLE work_order_escalations (
-              id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), tenant_id UUID NOT NULL,
-              work_order_id UUID NOT NULL REFERENCES work_orders(id), level SMALLINT NOT NULL,
-              "trigger" VARCHAR(20) NOT NULL, triggered_by_id UUID, reason TEXT, notified_count INT,
-              created_at TIMESTAMPTZ NOT NULL DEFAULT now(), UNIQUE (work_order_id, level))""");
-        String ins = "INSERT INTO work_order_escalations (tenant_id, work_order_id, level, \"trigger\", created_at) VALUES (?, ?, ?, ?, ?::timestamptz)";
+        String ins = "INSERT INTO work_order_escalations (tenant_id, work_order_id, level, trigger_kind, created_at) VALUES (?, ?, ?, ?, ?::timestamptz)";
         jdbc.update(ins, a.tenant(), x, 1, "sla_breach", "2026-03-05T10:00:00Z");
         jdbc.update(ins, a.tenant(), x, 2, "sla_overdue", "2026-03-06T10:00:00Z");
         jdbc.update(ins, a.tenant(), y, 1, "manual", "2026-03-05T11:00:00Z");
         jdbc.update(ins, b.tenant(), z, 1, "sla_breach", "2026-03-05T11:00:00Z");   // other tenant
-        jdbc.update("INSERT INTO work_order_escalations (tenant_id, work_order_id, level, \"trigger\", created_at) VALUES (?, ?, 3, 'emergency', '2026-04-02T00:00:00Z')", a.tenant(), y); // outside range
+        jdbc.update("INSERT INTO work_order_escalations (tenant_id, work_order_id, level, trigger_kind, created_at) VALUES (?, ?, 3, 'emergency', '2026-04-02T00:00:00Z')", a.tenant(), y); // outside range
 
         assertThat(q.escalationsAvailable()).isTrue();
         EscalationReport e = q.escalations(range, tenantA).orElseThrow();

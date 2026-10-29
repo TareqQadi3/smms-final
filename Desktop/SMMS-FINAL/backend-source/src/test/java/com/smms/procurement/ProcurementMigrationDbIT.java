@@ -2,7 +2,6 @@ package com.smms.procurement;
 
 import com.smms.it.DbFixtures;
 import com.smms.it.DbItSupport;
-import com.smms.procurement.support.W2bTestSupportConfig;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
 import org.junit.jupiter.api.AfterAll;
@@ -26,7 +25,6 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /**
  * V35-V39 on a database upgraded from V14 (legacy rows kept) and constraint behaviour of the new
  * tables. Runs only with -Pit against a throwaway server; uses and drops its own smms_it_upg_* database.
- * Until the inventory block (V30-V34) is merged, the test-only stub migration (29) stands in for it.
  */
 @Tag("db")
 class ProcurementMigrationDbIT {
@@ -60,8 +58,7 @@ class ProcurementMigrationDbIT {
         FluentConfiguration c = Flyway.configure()
             .dataSource(target.urlFor(scratchDb), target.user(), target.password())
             .cleanDisabled(true);
-        if (W2bTestSupportConfig.realInventoryMigrationsPresent()) c.locations("classpath:db/migration");
-        else c.locations("classpath:db/migration", "classpath:fp1-w2b-stubs");
+        c.locations("classpath:db/migration");
         if (targetVersion != null) c.target(targetVersion);
         return c.load();
     }
@@ -101,7 +98,7 @@ class ProcurementMigrationDbIT {
         UUID supplier = UUID.randomUUID();
         jdbc.update("INSERT INTO suppliers (id, tenant_id, code, name) VALUES (?,?,'S','Sup')", supplier, h.tenant());
         UUID wh = UUID.randomUUID();
-        jdbc.update("INSERT INTO warehouses (id, tenant_id, center_id, code, name) VALUES (?,?,?,'M','Main')", wh, h.tenant(), h.center());
+        jdbc.update("INSERT INTO warehouses (id, tenant_id, center_id, code, name, name_ar) VALUES (?,?,?,'M','Main','Main')", wh, h.tenant(), h.center());
         UUID creator = f.user(h, "warehouse"), approver = f.user(h, "maintenance_manager");
         UUID po = UUID.randomUUID();
         jdbc.update("INSERT INTO purchase_orders (id, tenant_id, po_number, center_id, supplier_id, warehouse_id, created_by_id) "

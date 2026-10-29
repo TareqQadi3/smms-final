@@ -124,8 +124,31 @@ class MigrationScriptsTest {
     }
 
     @Test
-    void v10CheckNamesMatchTheServiceWhitelist() throws Exception {
-        String sql = new String(resource("V10__tenant_diagnostics_views.sql"));
+    void v60IsReadOnlyAndKeepsEveryV10Check() throws Exception {
+        String sql = stripComments(new String(resource("V60__tenant_diagnostics_fp1.sql"))).toLowerCase();
+        assertThat(sql).doesNotContain("update ").doesNotContain("insert ").doesNotContain("delete from")
+            .doesNotContain("alter ").doesNotContain("drop ").doesNotContain("truncate")
+            .doesNotContain("select *").doesNotContain(".*");
+        assertThat(sql).contains("create or replace view diag_tenant_mismatch")
+            .contains("create or replace view diag_tenant_null").contains("function diag_tenant_summary").contains("stable");
+        String v10 = new String(resource("V10__tenant_diagnostics_views.sql"));
+        String v60 = new String(resource("V60__tenant_diagnostics_fp1.sql"));
+        var m = java.util.regex.Pattern.compile("SELECT '([a-z_]+)'::text").matcher(v10.substring(v10.indexOf("diag_tenant_mismatch AS"), v10.indexOf("diag_tenant_null AS")));
+        while (m.find()) assertThat(v60).as(m.group(1)).contains("'" + m.group(1) + "'::text");
+        // the new tables are covered
+        for (String t : java.util.List.of("maintenance_plans", "maintenance_plan_runs", "asset_downtime", "warehouses",
+                "units_of_measure", "stock_balances", "notification_preferences", "notification_deliveries",
+                "work_order_info_requests", "work_order_escalations", "work_order_ratings", "work_order_status_links",
+                "suppliers", "purchase_orders", "purchase_order_lines", "po_receipts", "po_receipt_lines",
+                "material_requests", "material_request_lines")) {
+            assertThat(v60).as(t).contains("FROM " + t + " WHERE tenant_id IS NULL");
+        }
+        assertThat(v60).contains("idempotency_records_user");
+    }
+
+    @Test
+    void v60CheckNamesMatchTheServiceWhitelist() throws Exception {
+        String sql = new String(resource("V60__tenant_diagnostics_fp1.sql"));
         java.util.Set<String> names = new java.util.LinkedHashSet<>();
         var m = java.util.regex.Pattern.compile("SELECT '([a-z_]+)'::text( AS check_name)?").matcher(sql);
         while (m.find()) {
