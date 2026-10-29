@@ -249,7 +249,7 @@ class MaterialRequestServiceTest {
         assertThatThrownBy(() -> service.doReserve(warehouse, m.getId(), null)).isInstanceOf(ConflictException.class);
         assertThat(m.getStatus()).isEqualTo(MaterialRequestStatus.approved);
         ledger.seed(wh, itemB, "9");
-        ledger.reserved.clear();
+        // no rollback in this unit test: line state and fake ledger stay consistent whichever line failed first
         service.doReserve(warehouse, m.getId(), null);
         assertThat(m.getStatus()).isEqualTo(MaterialRequestStatus.reserved);
         assertThat(ledger.reserved(wh, itemA)).isEqualByComparingTo("5");

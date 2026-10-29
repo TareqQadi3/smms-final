@@ -71,7 +71,7 @@ class PmUpgradeDbIT {
 
         flyway(null).migrate();
 
-        assertThat(jdbc.queryForList("SELECT version::int FROM flyway_schema_history WHERE success AND version::int >= 40 ORDER BY 1", Integer.class))
+        assertThat(jdbc.queryForList("SELECT version::int FROM flyway_schema_history WHERE success AND version::int BETWEEN 40 AND 44 ORDER BY 1", Integer.class))
             .containsExactly(40, 41, 42, 43, 44);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM assets", Long.class)).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT status::text FROM assets WHERE id = ?", String.class, a2)).isEqualTo("broken");

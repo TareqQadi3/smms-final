@@ -98,7 +98,7 @@ class ProcurementMigrationDbIT {
         UUID supplier = UUID.randomUUID();
         jdbc.update("INSERT INTO suppliers (id, tenant_id, code, name) VALUES (?,?,'S','Sup')", supplier, h.tenant());
         UUID wh = UUID.randomUUID();
-        jdbc.update("INSERT INTO warehouses (id, tenant_id, center_id, code, name) VALUES (?,?,?,'M','Main')", wh, h.tenant(), h.center());
+        jdbc.update("INSERT INTO warehouses (id, tenant_id, center_id, code, name, name_ar) VALUES (?,?,?,'M','Main','Main')", wh, h.tenant(), h.center());
         UUID creator = f.user(h, "warehouse"), approver = f.user(h, "maintenance_manager");
         UUID po = UUID.randomUUID();
         jdbc.update("INSERT INTO purchase_orders (id, tenant_id, po_number, center_id, supplier_id, warehouse_id, created_by_id) "

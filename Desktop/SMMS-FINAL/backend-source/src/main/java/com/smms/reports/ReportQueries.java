@@ -154,8 +154,8 @@ public class ReportQueries {
             + " JOIN centers c ON c.id = w.center_id WHERE e.created_at >= :start AND e.created_at < :end"
             + scope.sql("w", "c", p);
         try {
-            List<EscalationGroup> groups = jdbc.query("SELECT e.level AS lvl, e.\"trigger\" AS trg, count(*) AS n" + from
-                + " GROUP BY e.level, e.\"trigger\" ORDER BY e.level, e.\"trigger\"", p,
+            List<EscalationGroup> groups = jdbc.query("SELECT e.level AS lvl, e.trigger_kind AS trg, count(*) AS n" + from
+                + " GROUP BY e.level, e.trigger_kind ORDER BY e.level, e.trigger_kind", p,
                 (rs, i) -> new EscalationGroup(rs.getInt("lvl"), rs.getString("trg"), rs.getLong("n")));
             List<DayCount> days = jdbc.query("SELECT to_char(date_trunc('day', e.created_at AT TIME ZONE " + TZ
                 + "), 'YYYY-MM-DD') AS d, count(*) AS n" + from + " GROUP BY d ORDER BY d", p,

@@ -81,14 +81,14 @@ class MovementLinksDbIT extends AbstractDbIT {
         assertThat(issues).hasSize(2);
         assertThat(movement(warehouse, item, wh, issues.get(0)).materialRequestId()).isEqualTo(mr.id());
 
-        MovementResponse rev = ops.reverse(warehouse, key(), issues.get(0), new ReverseRequest("wrong issue")).body();
+        MovementResponse rev = ops.reverse(mm, key(), issues.get(0), new ReverseRequest("wrong issue")).body();
         assertThat(rev.materialRequestId()).as("reversal linked through reversal_of_id").isEqualTo(mr.id());
         assertThat(rev.poId()).isNull();
 
         mrs.consume(te, mr.id(), new ConsumeRequest(List.of(new LineQuantity(line, new BigDecimal("3"))), "used", null), null);
         mrs.giveBack(warehouse, mr.id(), new ReturnRequest(List.of(new LineQuantity(line, new BigDecimal("2"))), "unused", null), key());
         assertThat(jdbc.queryForObject("SELECT status FROM material_requests WHERE id = ?", String.class, mr.id())).isEqualTo("closed");
-        assertThatThrownBy(() -> ops.reverse(warehouse, key(), issues.get(1), new ReverseRequest("too late")))
+        assertThatThrownBy(() -> ops.reverse(mm, key(), issues.get(1), new ReverseRequest("too late")))
             .isInstanceOf(WorkflowException.class).hasMessageContaining("closed material request");
 
         // ── purchase order ──
@@ -104,12 +104,12 @@ class MovementLinksDbIT extends AbstractDbIT {
             UUID.class, pl);
         assertThat(receipts).hasSize(2);
         assertThat(movement(warehouse, item, wh, receipts.get(0)).poId()).isEqualTo(po.id());
-        MovementResponse prev = ops.reverse(warehouse, key(), receipts.get(0), new ReverseRequest("wrong receipt")).body();
+        MovementResponse prev = ops.reverse(mm, key(), receipts.get(0), new ReverseRequest("wrong receipt")).body();
         assertThat(prev.poId()).isEqualTo(po.id());
         assertThat(prev.materialRequestId()).isNull();
 
         pos.close(mm, po.id(), "supplier cannot deliver the rest", null);
-        assertThatThrownBy(() -> ops.reverse(warehouse, key(), receipts.get(1), new ReverseRequest("too late")))
+        assertThatThrownBy(() -> ops.reverse(mm, key(), receipts.get(1), new ReverseRequest("too late")))
             .isInstanceOf(WorkflowException.class).hasMessageContaining("closed purchase order");
     }
 }
