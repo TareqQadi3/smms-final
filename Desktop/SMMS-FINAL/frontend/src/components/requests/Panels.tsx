@@ -47,7 +47,7 @@ export function InfoRequestPanel({ wo, active, onChanged }: { wo: RequestWorkOrd
 
   const load = useCallback(() => {
     requestsApi.infoRequests(wo.id)
-      .then((r) => { setList(r.data); setLoadFailed(false); })
+      .then((r) => { setList(Array.isArray(r.data) ? r.data : []); setLoadFailed(false); })
       .catch(() => setLoadFailed(true));
   }, [wo.id]);
   useEffect(() => { load(); }, [load, wo.currentStage]);
