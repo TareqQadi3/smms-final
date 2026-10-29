@@ -138,3 +138,9 @@ Hard tasks: plan with Opus 5.5 only, execute with Sonnet 5.5 only, verify the mo
 - Guard is fail-closed and state-hash based; `--auto` only runs `docker compose start`. Backup verifies all public tables and requires the uploads archive. Runbook order: pull (deploys nothing) -> backup -> `setup.sh --backup-file`. Work-log Entry 12.
 - Real GitHub Actions results recorded in Entry 12: Secret Scan, Backend Tests and Frontend CI all succeeded on `f78c70f`.
 - `gh codespace` is not usable from the Claude session (403). Codespace-only checks are a checklist in Entry 12.
+
+## Feature program 1 state (2026-10-29, branch claude/feature-program-1)
+- Flyway is at V60. New tables all carry tenant_id; out-of-scope = 404, role = 403, no token = 401. Every stock-changing endpoint requires Idempotency-Key; movements are immutable and reversed, never edited.
+- Public status endpoint is OFF in prod (flag). Notification delivery log shows `not_configured` until a provider is configured. Backend must run as a single replica (WS tickets and schedulers are in-process).
+- Mobile = `/tech` inside the Next.js app. Frontend Playwright specs mock the API; the real-API run was done once by the full-stack verifier (work-log Entry 13), its scripts are not in the repo.
+- Open: PM generate-now semantics, NUL-filename 500, owner questions listed in the roadmap.

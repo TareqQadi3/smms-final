@@ -99,3 +99,10 @@ Explicit limits:
 - Before this phase only "Backend Tests" had ever run (7 runs, last on PR #2 for `85920af`).
 - Workflows now also trigger on pushes to `claude/**` branches. A push to `claude/pre-deploy-final` produced real runs; see `work-log.md` Entry 12 for the recorded results. A push to such a branch that also has an open PR runs every workflow twice.
 - `main`-only triggers are unchanged. Actions are referenced by tag, not pinned to a commit SHA (could not be verified offline).
+
+## Feature program 1 additions (branch `claude/feature-program-1`)
+- **Migrations:** Flyway V13-V14, V20-V25, V30-V34, V35-V39, V40-V44, V50-V51, V60 run on the first start after deploy. They add tables and backfills; they are not reversible by the app, so the verified backup (section 3) is the rollback path.
+- **Config to review before enabling:** public request-status flag stays OFF in prod; notification providers (email/SMS) are unconfigured and report `not_configured`; PM scheduler and overdue/escalation jobs run inside the backend.
+- **Single replica:** WebSocket tickets and schedulers are in-process; do not scale the backend beyond one replica until locking is added.
+- **Known open issues:** PM `generate-now` creates a work order per call (see work-log Entry 13); NUL byte in an upload filename returns 500.
+- **Not verified on the real deployment:** the Codespace, Safari/iPhone, real SMTP/SMS.

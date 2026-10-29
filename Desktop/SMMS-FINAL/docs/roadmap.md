@@ -59,3 +59,7 @@ Dedicated app for field technicians on the existing backend (no second backend).
 - CHECK constraints beyond V6, per-tenant uniqueness of center/region codes.
 - Escalation history row needs a system actor (actor columns are NOT NULL); SLA is not paused while info is pending; lock/unlock write no history.
 - Duplicate detection is a non-blocking warning only.
+
+## After feature program 1 (2026-10-29)
+Done: workflow gaps, inventory, procurement, assets and preventive maintenance, reports/SLA/notification log, mobile-first technician area, frontend quality (see work-log Entry 13).
+Next, in order: (1) decide PM `generate-now` semantics; (2) filename NUL -> 400; (3) owner testing on an iPhone (Safari, camera/HEIC); (4) real SMTP/SMS provider; (5) multi-replica locking for schedulers and WS tickets before scaling backend; (6) department-wide visibility (owner decision); (7) push notifications / native app only if the web app proves insufficient.

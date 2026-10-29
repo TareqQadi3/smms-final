@@ -44,3 +44,6 @@ with `ddl-auto: validate`, so a mapped column missing from the schema fails the 
 
 New database tests: extend `AbstractDbIT`, name the class `*IT`, create your own rows (see
 `DbFixtures`), and never rely on rows left by other tests.
+
+## Added by feature program 1
+DB ITs now also cover inventory (concurrency, idempotency, immutable movements), procurement, material requests, assets/PM generation (`PmAssetsDbIT`), reports and notification delivery. Last run: 80 DB ITs passing on fresh and upgrade (V12-era -> V60) throwaway PostgreSQL. Same safety rules (throwaway database only).
