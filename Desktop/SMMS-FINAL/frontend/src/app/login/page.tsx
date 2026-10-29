@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useThemeStore } from '@/store/themeStore';
-import { authApi } from '@/lib/api';
+import { authApi, safeNextPath } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
 
   useEffect(() => { initTheme(); }, [initTheme]);
+  // ?expired=1 and ?next=<path> are set by the API layer when a session ends (see lib/api.ts)
+  const [expired, setExpired] = useState(false);
+  const [nextPath, setNextPath] = useState<string | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setExpired(q.get('expired') === '1');
+    setNextPath(safeNextPath(q.get('next')));
+  }, []);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,7 +56,8 @@ export default function LoginPage() {
       };
       setAuth(user, token);
       if (passwordChangeRequired === true) router.push('/settings?tab=security');
-      else if (role === 'technician') router.push('/my-tasks');
+      else if (nextPath) router.push(nextPath);
+      else if (role === 'technician') router.push('/tech');
       else if (role === 'resident' || role === 'department') router.push('/new-request');
       else router.push('/dashboard');
     } catch {
@@ -137,6 +146,12 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
+
+            {expired && !error && (
+              <div role="status" className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2.5 rounded-lg">
+                {isAr ? 'انتهت جلستك. سجّل الدخول مرة أخرى للمتابعة.' : 'Your session expired. Sign in again to continue.'}
+              </div>
+            )}
 
             {/* Error */}
             {error && (
