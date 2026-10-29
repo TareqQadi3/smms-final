@@ -1,0 +1,68 @@
+import type { ModuleDict } from '@/lib/module-i18n';
+
+const ar = {
+  actions: 'إجراءات', active: 'نشط', inactive: 'غير نشط', activeOnly: 'النشطون فقط', inactiveOnly: 'غير النشطين فقط', allStatuses: 'كل الحالات',
+  all: 'الكل', back: 'رجوع', cancel: 'إلغاء', center: 'المركز', choose: 'اختر...', code: 'الرمز', edit: 'تعديل', from: 'من', to: 'إلى',
+  item: 'الصنف', lines: 'البنود', name: 'الاسم', nameAr: 'الاسم بالعربية', nameEn: 'الاسم بالإنجليزية', save: 'حفظ', saving: 'جارٍ الحفظ...',
+  search: 'بحث', status: 'الحالة', warehouse: 'المستودع', addLine: 'إضافة بند', removeLine: 'حذف البند {n}', reason: 'السبب',
+  noteOptional: 'ملاحظة (اختياري)', notes: 'ملاحظات', createdAt: 'تاريخ الإنشاء', total: 'الإجمالي',
+  errRequired: 'هذا الحقل مطلوب', errEmail: 'بريد إلكتروني غير صالح', errRange: 'تاريخ البداية بعد تاريخ النهاية',
+  errPositive: 'أدخل كمية أكبر من صفر', errDecimals: 'الحد الأقصى 3 خانات عشرية', errMaxQty: 'الكمية تتجاوز 1,000,000',
+  errPrice: 'سعر غير صالح (رقمان عشريان كحد أقصى)', errDuplicateItems: 'لا يمكن تكرار نفس الصنف في أكثر من بند',
+  // suppliers
+  suppliersTitle: 'الموردون', suppliersCount: '{n} مورد', searchSuppliers: 'بحث بالاسم أو الرمز', noSuppliers: 'لا يوجد موردون',
+  noSuppliersHint: 'أضف موردا لتتمكن من إنشاء أوامر الشراء.', newSupplier: 'مورد جديد', editSupplier: 'تعديل المورد', phone: 'الهاتف',
+  email: 'البريد الإلكتروني', taxNumber: 'الرقم الضريبي', deactivate: 'إيقاف', deactivateTitle: 'إيقاف المورد',
+  deactivateDesc: 'لن يمكن اختيار المورد "{name}" في أوامر الشراء الجديدة. هل تريد المتابعة؟', supplierSaved: 'تم حفظ المورد.',
+  supplierDeactivated: 'تم إيقاف المورد.', supplier: 'المورد',
+  // purchase orders
+  posTitle: 'أوامر الشراء', posCount: '{n} أمر شراء', newPo: 'أمر شراء جديد', editPo: 'تعديل أمر الشراء', noPos: 'لا توجد أوامر شراء',
+  noPosHint: 'أنشئ أمر شراء جديدا للبدء.', poNumber: 'رقم أمر الشراء', expectedDate: 'تاريخ التوريد المتوقع',
+  poFormHint: 'يُحفظ كمسودة، ثم يُرسل للاعتماد من صفحة التفاصيل.', saveDraft: 'حفظ كمسودة', onlyDraftEditable: 'لا يمكن تعديل أمر الشراء إلا وهو مسودة.',
+  qtyOrdered: 'الكمية المطلوبة', qtyReceived: 'الكمية المستلمة', qtyRemaining: 'المتبقي', unitPrice: 'سعر الوحدة',
+  createdBy: 'أنشأه', submittedAt: 'تاريخ الإرسال', decidedBy: 'القرار بواسطة', decisionReason: 'سبب القرار', linkedMr: 'طلب المواد المرتبط', linkedWo: 'أمر العمل المرتبط',
+  receipts: 'سندات الاستلام', noReceipts: 'لا توجد استلامات بعد.',
+  submitPo: 'إرسال للاعتماد', submitConfirm: 'بعد الإرسال لن يمكن تعديل أمر الشراء. هل تريد المتابعة؟',
+  approve: 'اعتماد', approveDesc: 'اعتماد أمر الشراء. يجب أن يكون المعتمِد غير من أنشأه.', reject: 'رفض', cancelPo: 'إلغاء الأمر',
+  closePo: 'إغلاق الأمر', closeDesc: 'إغلاق الأمر قبل اكتمال الاستلام (إغلاق مبكر). السبب إلزامي.',
+  receiveGoods: 'استلام بضاعة', receiveDesc: 'أدخل الكميات المستلمة. لا يُسمح باستلام أكثر من المتبقي.', remainingHint: 'المتبقي {n}',
+  separationOfDuties: 'لا يمكنك اعتماد أو رفض أمر شراء أنشأته بنفسك.',
+  doneSubmit: 'تم إرسال أمر الشراء للاعتماد.', doneApprove: 'تم اعتماد أمر الشراء.', doneReject: 'تم رفض أمر الشراء.',
+  doneCancel: 'تم إلغاء أمر الشراء.', doneClose: 'تم إغلاق أمر الشراء.', doneReceive: 'تم تسجيل الاستلام وتحديث المخزون.',
+  status_draft: 'مسودة', status_submitted: 'بانتظار الاعتماد', status_approved: 'معتمد', status_rejected: 'مرفوض',
+  status_partially_received: 'استلام جزئي', status_received: 'مستلم', status_cancelled: 'ملغي', status_closed: 'مغلق',
+} as const;
+
+const en: Partial<Record<keyof typeof ar, string>> = {
+  actions: 'Actions', active: 'Active', inactive: 'Inactive', activeOnly: 'Active only', inactiveOnly: 'Inactive only', allStatuses: 'All statuses',
+  all: 'All', back: 'Back', cancel: 'Cancel', center: 'Center', choose: 'Choose...', code: 'Code', edit: 'Edit', from: 'From', to: 'To',
+  item: 'Item', lines: 'Lines', name: 'Name', nameAr: 'Arabic name', nameEn: 'English name', save: 'Save', saving: 'Saving...',
+  search: 'Search', status: 'Status', warehouse: 'Warehouse', addLine: 'Add line', removeLine: 'Remove line {n}', reason: 'Reason',
+  noteOptional: 'Note (optional)', notes: 'Notes', createdAt: 'Created', total: 'Total',
+  errRequired: 'This field is required', errEmail: 'Invalid email address', errRange: 'Start date is after end date',
+  errPositive: 'Enter a quantity greater than zero', errDecimals: 'At most 3 decimals', errMaxQty: 'Quantity exceeds 1,000,000',
+  errPrice: 'Invalid price (at most 2 decimals)', errDuplicateItems: 'The same item cannot appear on more than one line',
+  suppliersTitle: 'Suppliers', suppliersCount: '{n} suppliers', searchSuppliers: 'Search by name or code', noSuppliers: 'No suppliers',
+  noSuppliersHint: 'Add a supplier to be able to create purchase orders.', newSupplier: 'New supplier', editSupplier: 'Edit supplier', phone: 'Phone',
+  email: 'Email', taxNumber: 'Tax number', deactivate: 'Deactivate', deactivateTitle: 'Deactivate supplier',
+  deactivateDesc: 'Supplier "{name}" can no longer be chosen on new purchase orders. Continue?', supplierSaved: 'Supplier saved.',
+  supplierDeactivated: 'Supplier deactivated.', supplier: 'Supplier',
+  posTitle: 'Purchase orders', posCount: '{n} purchase orders', newPo: 'New purchase order', editPo: 'Edit purchase order', noPos: 'No purchase orders',
+  noPosHint: 'Create a new purchase order to get started.', poNumber: 'PO number', expectedDate: 'Expected date',
+  poFormHint: 'Saved as a draft; submit it for approval from the detail page.', saveDraft: 'Save as draft', onlyDraftEditable: 'A purchase order can only be edited while it is a draft.',
+  qtyOrdered: 'Qty ordered', qtyReceived: 'Qty received', qtyRemaining: 'Remaining', unitPrice: 'Unit price',
+  createdBy: 'Created by', submittedAt: 'Submitted', decidedBy: 'Decided by', decisionReason: 'Decision reason', linkedMr: 'Linked material request', linkedWo: 'Linked work order',
+  receipts: 'Receipts', noReceipts: 'Nothing received yet.',
+  submitPo: 'Submit for approval', submitConfirm: 'After submitting, the purchase order can no longer be edited. Continue?',
+  approve: 'Approve', approveDesc: 'Approve the purchase order. The approver must not be its creator.', reject: 'Reject', cancelPo: 'Cancel order',
+  closePo: 'Close order', closeDesc: 'Close the order before it is fully received (short close). A reason is required.',
+  receiveGoods: 'Receive goods', receiveDesc: 'Enter the received quantities. Receiving more than the remaining quantity is not allowed.', remainingHint: 'Remaining {n}',
+  separationOfDuties: 'You cannot approve or reject a purchase order you created.',
+  doneSubmit: 'Purchase order submitted for approval.', doneApprove: 'Purchase order approved.', doneReject: 'Purchase order rejected.',
+  doneCancel: 'Purchase order cancelled.', doneClose: 'Purchase order closed.', doneReceive: 'Receipt recorded and stock updated.',
+  status_draft: 'Draft', status_submitted: 'Awaiting approval', status_approved: 'Approved', status_rejected: 'Rejected',
+  status_partially_received: 'Partially received', status_received: 'Received', status_cancelled: 'Cancelled', status_closed: 'Closed',
+};
+
+export type ProcurementKey = keyof typeof ar;
+export const procurementDict: ModuleDict<ProcurementKey> = { ar, en };
