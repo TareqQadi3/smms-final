@@ -8,7 +8,8 @@ import { useT } from '@/lib/i18n';
 import { UserRole } from '@/lib/types';
 import {
   LayoutDashboard, ClipboardList, Users, MapPin, Building2,
-  Radio, CheckSquare, BarChart3, Settings, Wrench, PlusCircle, X, SlidersHorizontal
+  Radio, CheckSquare, BarChart3, Settings, Wrench, PlusCircle, X, SlidersHorizontal,
+  Package, Truck, ShoppingCart, PackageOpen, Boxes, CalendarClock, Building, MailCheck
 } from 'lucide-react';
 
 interface NavItem {
@@ -45,7 +46,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               'maintenance_manager','electrical_manager','warehouse'],
     },
     {
-      href: '/my-tasks',
+      href: '/tech',
       icon: <Wrench size={20} />,
       label: tr.myTasks,
       roles: ['technician'],
@@ -88,11 +89,65 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       roles: ['system_admin','region_supervisor','hospital_supervisor'],
     },
     {
+      href: '/my-requests',
+      icon: <ClipboardList size={20} />,
+      label: isAr ? 'طلباتي' : 'My requests',
+      roles: ['resident','department'],
+    },
+    {
+      href: '/inventory',
+      icon: <Package size={20} />,
+      label: isAr ? 'المخزون' : 'Inventory',
+      roles: ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','electrical_manager','operating_company_manager','warehouse','control_room','technician'],
+    },
+    {
+      href: '/material-requests',
+      icon: <PackageOpen size={20} />,
+      label: isAr ? 'طلبات المواد' : 'Material requests',
+      roles: ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','electrical_manager','operating_company_manager','warehouse','control_room','technician'],
+    },
+    {
+      href: '/procurement/suppliers',
+      icon: <Truck size={20} />,
+      label: isAr ? 'الموردون' : 'Suppliers',
+      roles: ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','operating_company_manager','warehouse'],
+    },
+    {
+      href: '/procurement/purchase-orders',
+      icon: <ShoppingCart size={20} />,
+      label: isAr ? 'أوامر الشراء' : 'Purchase orders',
+      roles: ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','operating_company_manager','warehouse'],
+    },
+    {
+      href: '/assets',
+      icon: <Boxes size={20} />,
+      label: isAr ? 'الأصول' : 'Assets',
+      roles: ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','electrical_manager','operating_company_manager','control_room','warehouse','technician','department'],
+    },
+    {
+      href: '/maintenance-plans',
+      icon: <CalendarClock size={20} />,
+      label: isAr ? 'الصيانة الوقائية' : 'Preventive maintenance',
+      roles: ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','electrical_manager','operating_company_manager','control_room'],
+    },
+    {
+      href: '/departments',
+      icon: <Building size={20} />,
+      label: isAr ? 'الأقسام' : 'Departments',
+      roles: ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','electrical_manager','operating_company_manager','control_room'],
+    },
+    {
+      href: '/admin/notification-deliveries',
+      icon: <MailCheck size={20} />,
+      label: isAr ? 'سجل إرسال الإشعارات' : 'Notification deliveries',
+      roles: ['system_admin'],
+    },
+    {
       href: '/reports',
       icon: <BarChart3 size={20} />,
       label: tr.reports,
       roles: ['system_admin','region_supervisor','hospital_supervisor',
-              'maintenance_manager','electrical_manager','operating_company_manager'],
+              'maintenance_manager','electrical_manager','operating_company_manager','warehouse'],
     },
     {
       href: '/settings',

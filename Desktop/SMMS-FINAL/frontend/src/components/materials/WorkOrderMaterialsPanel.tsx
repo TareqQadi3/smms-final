@@ -42,7 +42,8 @@ export function WorkOrderMaterialsPanel({
   const [dialog, setDialog] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
   if (!allowed) return <PermissionDenied />;
-  const rows = data ?? [];
+  // defensive: an unexpected payload must degrade this panel, never crash the work-order page
+  const rows = Array.isArray(data) ? data : [];
   const statusOk = !workOrderStatus || CAN_REQUEST_STATUSES.includes(workOrderStatus);
   const canCreate = can.createMr(role) && statusOk;
   const known = Array.from(new Set(rows.map((r) => r.warehouseId).filter((x): x is string => !!x)));

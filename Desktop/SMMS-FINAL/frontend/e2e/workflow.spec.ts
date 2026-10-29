@@ -64,6 +64,7 @@ async function mockWorkOrder(page: Page, s: WoState) {
     if (p.startsWith(`/work-orders/${WO_ID}/attachments/`) && p.endsWith('/content')) {
       return route.fulfill({ status: 200, contentType: 'application/pdf', body: '%PDF-1.4 test' });
     }
+    if (p === `/work-orders/${WO_ID}/material-requests`) return json(route, []);
     return json(route, {});
   });
 }
@@ -262,8 +263,11 @@ test.describe('new request', () => {
     await mock(page, created);
     await page.goto('/new-request');
     await page.locator('select').first().selectOption('cr1');
-    await expect(page.getByLabel('Asset (optional)')).toBeVisible();
-    await page.getByLabel('Asset (optional)').selectOption('as1');
+    // the registered AssetPicker (combobox with a listbox of the center's assets)
+    const picker = page.locator('input[role="combobox"]');
+    await expect(picker).toBeVisible();
+    await picker.click();
+    await page.getByRole('option', { name: /AST-1/ }).click();
     await page.locator('select', { hasText: 'HVAC' }).selectOption({ label: 'HVAC' });
     await page.getByPlaceholder('Enter request title').fill('Chiller down');
     await page.getByLabel('Emergency request').check();
