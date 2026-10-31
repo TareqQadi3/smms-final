@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
-import { useT, statusColors, priorityColors } from '@/lib/i18n';
+import { useT, statusColors, priorityColors, tStatus, tPriority } from '@/lib/i18n';
 import { workOrderApi, controlRoomApi } from '@/lib/api';
 import { WorkOrder, TicketStatus, TicketPriority } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, Search, RefreshCw, Eye, ChevronLeft, ChevronRight } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
+import { StateMessage } from '@/components/ui/state-message';
 import Link from 'next/link';
 
 const STATUSES: TicketStatus[] = ['new','under_review','assigned','in_progress','waiting_materials','waiting_approval','completed','closed','cancelled'];
@@ -30,6 +31,7 @@ export default function WorkOrdersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // filters
   const [search, setSearch] = useState('');
@@ -41,11 +43,14 @@ export default function WorkOrdersPage() {
   const [controlRooms, setControlRooms] = useState<{id:string;name:string}[]>([]);
   const [form, setForm] = useState({ controlRoomId:'', subType:'', title:'', description:'', locationDetail:'', priority:'medium' as TicketPriority });
   const [submitting, setSubmitting] = useState(false);
+  // Non-blocking duplicate hint returned by the create call (only tickets the user may already see)
+  const [dupes, setDupes] = useState<{ id: string; ticketNumber: string }[]>([]);
 
   const canCreate = user && ['resident','department','control_room','system_admin'].includes(user.role);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const params: Record<string,unknown> = { page, size: 10 };
       if (filterStatus) params.status = filterStatus;
@@ -53,7 +58,7 @@ export default function WorkOrdersPage() {
       const res = await workOrderApi.getAll(params);
       setOrders(res.data.content || []);
       setTotal(res.data.totalElements || 0);
-    } catch { /* silent */ }
+    } catch { setLoadError(true); }
     finally { setLoading(false); }
   }, [page, filterStatus, filterPriority]);
 
@@ -71,7 +76,8 @@ export default function WorkOrdersPage() {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await workOrderApi.create(form);
+      const res = await workOrderApi.create(form);
+      setDupes(Array.isArray(res.data?.possibleDuplicates) ? res.data.possibleDuplicates : []);
       setCreateOpen(false);
       setForm({ controlRoomId:'', subType:'', title:'', description:'', locationDetail:'', priority:'medium' });
       load();
@@ -108,20 +114,32 @@ export default function WorkOrdersPage() {
           )}
         </div>
 
+        {dupes.length > 0 && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-start justify-between gap-3">
+            <p>
+              {isAr ? 'تم إنشاء البلاغ. قد يتشابه مع بلاغات مفتوحة: ' : 'Ticket created. It may duplicate open tickets: '}
+              {dupes.map(d => d.ticketNumber).join(', ')}
+            </p>
+            <button type="button" onClick={() => setDupes([])} className="text-xs underline shrink-0">
+              {isAr ? 'إخفاء' : 'Dismiss'}
+            </button>
+          </div>
+        )}
+
         {/* Filters */}
         <Card className="border-0 shadow-sm">
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-3 items-center">
               <div className="relative flex-1 min-w-[200px]">
-                <Search size={15} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+                <Search size={15} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 start-3`} />
                 <Input
                   placeholder={tr.search}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  className={`${isAr ? 'pr-9' : 'pl-9'} h-9`}
+                  className={`ps-9 h-9`}
                 />
               </div>
-              <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v === 'all' ? '' : v); setPage(0); }}>
+              <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(!v || v === 'all' ? '' : v); setPage(0); }}>
                 <SelectTrigger className="w-40 h-9">
                   <SelectValue placeholder={tr.status} />
                 </SelectTrigger>
@@ -130,7 +148,7 @@ export default function WorkOrdersPage() {
                   {STATUSES.map(s => <SelectItem key={s} value={s}>{statusLabel[s]}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Select value={filterPriority} onValueChange={(v) => { setFilterPriority(v === 'all' ? '' : v); setPage(0); }}>
+              <Select value={filterPriority} onValueChange={(v) => { setFilterPriority(!v || v === 'all' ? '' : v); setPage(0); }}>
                 <SelectTrigger className="w-36 h-9">
                   <SelectValue placeholder={tr.priority} />
                 </SelectTrigger>
@@ -154,17 +172,23 @@ export default function WorkOrdersPage() {
               <div className="flex items-center justify-center h-48">
                 <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
               </div>
+            ) : loadError ? (
+              <StateMessage kind="error" onRetry={load} retryLabel={isAr ? 'إعادة المحاولة' : 'Try again'}>
+                {isAr ? 'تعذّر تحميل البلاغات. تحقق من الاتصال ثم أعد المحاولة.' : 'Unable to load tickets. Check your connection and try again.'}
+              </StateMessage>
             ) : orders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-gray-400">
-                <p className="text-lg">{tr.noData}</p>
-              </div>
+              <StateMessage>
+                {filterStatus || filterPriority
+                  ? (isAr ? 'لا توجد بلاغات تطابق التصفية. غيّر الحالة أو الأولوية.' : 'No tickets match the filters. Change the status or priority.')
+                  : (isAr ? 'لا توجد بلاغات بعد.' : 'No tickets yet.')}
+              </StateMessage>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 border-b border-border">
                     <tr>
-                      {[tr.ticketNumber, tr.title, tr.status, tr.priority, tr.assignedTo, tr.date, tr.actions].map(h => (
-                        <th key={h} className="text-start px-4 py-3 font-medium text-gray-600">{h}</th>
+                      {[tr.ticketNumber, tr.title, tr.status, tr.priority, tr.assignedTo, tr.date, tr.actions].map((h, i) => (
+                        <th key={h} className={`text-start px-4 py-3 font-medium text-gray-600 ${i === 2 ? 'max-md:hidden' : ''}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -173,30 +197,31 @@ export default function WorkOrdersPage() {
                       .filter(o => !search || o.title?.toLowerCase().includes(search.toLowerCase()) || o.ticketNumber?.includes(search))
                       .map((wo) => (
                       <tr key={wo.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 font-mono text-xs text-blue-600 font-semibold">{wo.ticketNumber}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-blue-600 font-semibold whitespace-nowrap tabular-nums"><bdi dir="ltr">{wo.ticketNumber}</bdi>
+                          <br /><span className={`md:hidden mt-1.5 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || 'bg-gray-100'}`}>{tStatus(wo.status, lang)}</span></td>
                         <td className="px-4 py-3 max-w-[200px]">
                           <p className="truncate font-medium">{wo.title}</p>
                           {wo.slaBreached && (
                             <span className="text-xs text-red-600 font-medium">{isAr ? '⚠ تجاوز SLA' : '⚠ SLA Breached'}</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 whitespace-nowrap max-md:hidden">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusColors[wo.status] || 'bg-gray-100'}`}>
-                            {statusLabel[wo.status] || wo.status}
+                            {tStatus(wo.status, lang)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${priorityColors[wo.priority] || ''}`}>
-                            {wo.priority}
+                            {tPriority(wo.priority, lang)}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-600">{wo.assignedTo?.fullName || '-'}</td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">
-                          {wo.createdAt ? format(new Date(wo.createdAt), 'dd/MM/yyyy') : '-'}
+                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap tabular-nums">
+                          {formatDate(wo.createdAt, lang)}
                         </td>
                         <td className="px-4 py-3">
-                          <Link href={`/work-orders/${wo.id}`}>
-                            <Button variant="ghost" size="sm" className="gap-1 h-7 text-xs">
+                          <Link href={`/work-orders/${wo.id}`} className="inline-flex">
+                            <Button variant="ghost" size="sm" className="gap-1 text-xs">
                               <Eye size={13} /> {isAr ? 'عرض' : 'View'}
                             </Button>
                           </Link>

@@ -3,6 +3,11 @@ package com.smms.service;
 import com.smms.entity.*;
 import com.smms.enums.UserRole;
 import com.smms.repository.*;
+import com.smms.security.AdminScopePolicy;
+import com.smms.util.InputSanitizer;
+import com.smms.util.TenantContext;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
@@ -25,6 +30,9 @@ public class BulkImportService {
     private final UserRepository userRepo;
     private final CenterRepository centerRepo;
     private final PasswordEncoder passwordEncoder;
+    private final AdminScopePolicy policy;
+    private final PlanEnforcementService planEnforcement;
+    private final UserAccountValidator validator;
 
     // ── Templates ─────────────────────────────────────────────
 
@@ -66,144 +74,253 @@ public class BulkImportService {
 
     // ── Import ────────────────────────────────────────────────
 
-    @Transactional
-    public ImportResult importResidents(MultipartFile file) throws Exception {
-        int success = 0;
-        List<String> errors = new ArrayList<>();
+    private static final String XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private static final int MAX_REPORTED_ERRORS = 100;
+    private static final int MAX_ERROR_LENGTH = 200;
 
-        try (InputStream in = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(in)) {
+    @Value("${smms.import.max-bytes:2097152}")
+    private long maxBytes = 2L * 1024 * 1024;
+    @Value("${smms.import.max-rows:1000}")
+    private int maxRows = 1000;
+
+    /** Raw cells of one data row (1-based sheet row number for messages). */
+    private record RawRow(int number, String[] cells) {}
+
+    /** Validated, not yet persisted row. */
+    private record Pending(int number, User user, String rawPassword) {}
+
+    /**
+     * Imports residents. All-or-nothing: the whole file is parsed and validated first and nothing
+     * is written unless every row is valid, so a bad row can never leave a half-imported batch.
+     */
+    @Transactional
+    public ImportResult importResidents(MultipartFile file, User actor) throws Exception {
+        return importUsers(file, actor, UserRole.resident, 10, 9, (c, center) -> User.builder()
+            .username(c[0])
+            .fullName(InputSanitizer.clean(c[2], 200))
+            .fullNameAr(blankToNull(InputSanitizer.clean(c[3], 200)))
+            .phone(blankToNull(c[5]))
+            .complexName(blankToNull(InputSanitizer.clean(c[6], 200)))
+            .buildingNumber(blankToNull(InputSanitizer.clean(c[7], 50)))
+            .unitNumber(blankToNull(InputSanitizer.clean(c[8], 50)))
+            .build(), 4, 5, 2);
+    }
+
+    /** Imports department accounts; same all-or-nothing semantics as {@link #importResidents}. */
+    @Transactional
+    public ImportResult importDepartments(MultipartFile file, User actor) throws Exception {
+        return importUsers(file, actor, UserRole.department, 9, 8, (c, center) -> User.builder()
+            .username(c[0])
+            .fullName(InputSanitizer.clean(c[2], 200))
+            .phone(blankToNull(c[7]))
+            .departmentName(InputSanitizer.clean(c[2], 200))
+            .departmentSupervisor(blankToNull(InputSanitizer.clean(c[3], 200)))
+            .departmentEmail(blankToNull(c[4]))
+            .extensionNumber(blankToNull(InputSanitizer.clean(c[5], 20)))
+            .build(), 6, 7, 2);
+    }
+
+    private interface Mapper { User map(String[] cells, Center center); }
+
+    /**
+     * @param columns        number of columns of the template
+     * @param centerCol      column of the center code
+     * @param emailCol       column of the account email (a placeholder is used when empty)
+     * @param phoneCol       column of the phone number
+     * @param nameCol        column of the required display name
+     */
+    private ImportResult importUsers(MultipartFile file, User actor, UserRole role, int columns, int centerCol,
+                                     Mapper mapper, int emailCol, int phoneCol,
+                                     int nameCol) throws Exception {
+        validateFile(file);
+        // Role rule first, once for the whole file (403)
+        policy.assertCanAssignRole(actor, role);
+
+        List<RawRow> rows = readRows(file, columns);
+        if (rows.isEmpty()) throw new IllegalArgumentException("The file contains no data rows");
+
+        UUID ctxTenant = TenantContext.get();
+        List<String> errors = new ArrayList<>();
+        int failedRows = 0;
+        List<Pending> pending = new ArrayList<>();
+        Set<String> usernames = new HashSet<>();
+        Set<String> emails = new HashSet<>();
+        Map<String, Center> centers = new HashMap<>();
+
+        for (RawRow row : rows) {
+            String[] c = row.cells();
+            int before = errors.size();
+            String where = "Row " + row.number() + ": ";
+
+            // Same field rules as UserService.create, shared through UserAccountValidator
+            boolean isDepartment = role == UserRole.department;
+            Set<String> rowErrors = new LinkedHashSet<>(validator.validateFields(new UserAccountValidator.Fields(
+                c[0], c[1], c[emailCol], c[phoneCol], c[nameCol], role,
+                isDepartment ? c[2] : null, isDepartment ? c[4] : null)));
+            String username = c[0];
+            if (StringUtils.hasText(username) && validator.validateUsername(username).isEmpty()) {
+                if (!usernames.add(username.toLowerCase(java.util.Locale.ROOT))) {
+                    rowErrors.add("username '" + username + "' appears more than once in the file");
+                } else if (userRepo.existsByUsernameIgnoreCaseAndDeletedAtIsNull(username)) {
+                    rowErrors.add("username '" + username + "' already exists");
+                }
+            }
+            String email = c[emailCol];
+            rowErrors.forEach(e -> errors.add(where + e));
+
+            Center center = null;
+            if (!StringUtils.hasText(c[centerCol])) {
+                errors.add(where + "centerCode is required");
+            } else {
+                center = resolveCenter(c[centerCol], ctxTenant, actor, centers);
+                if (center == null) {
+                    // Missing, other tenant and out of scope look the same
+                    errors.add(where + "center code '" + abbreviate(c[centerCol]) + "' not found");
+                } else if (center.getTenantId() == null) {
+                    errors.add(where + "center has no tenant assigned");
+                    center = null;
+                }
+            }
+
+            if (center != null) {
+                validator.validateLinks(role, center, null, isDepartment ? c[2] : null)
+                    .stream().filter(e -> !errors.contains(where + e)).forEach(e -> errors.add(where + e));
+            }
+
+            String resolvedEmail = null;
+            if (StringUtils.hasText(username) && errors.size() == before) {
+                resolvedEmail = StringUtils.hasText(email) ? email : username + "@smms.local";
+                if (!emails.add(resolvedEmail.toLowerCase(Locale.ROOT))) {
+                    errors.add(where + "email '" + resolvedEmail + "' appears more than once in the file");
+                } else if (userRepo.existsByEmailAndDeletedAtIsNull(resolvedEmail)) {
+                    errors.add(where + "email '" + resolvedEmail + "' already exists");
+                }
+            }
+
+            if (errors.size() > before) { failedRows++; continue; }
+
+            User user = mapper.map(c, center);
+            user.setEmail(resolvedEmail);
+            user.setRole(role);
+            user.setCenter(center);
+            user.setTenantId(center.getTenantId());
+            user.setActive(true);
+            pending.add(new Pending(row.number(), user, c[1]));
+        }
+
+        if (failedRows > 0) {
+            return new ImportResult(0, failedRows, capErrors(errors));
+        }
+
+        // Plan limits of every tenant the file writes into, before the first write
+        Map<UUID, Integer> perTenant = new LinkedHashMap<>();
+        for (Pending p : pending) perTenant.merge(p.user().getTenantId(), 1, Integer::sum);
+        perTenant.forEach(planEnforcement::checkUserLimit);
+
+        // Phase 2: hash passwords and write everything in this one transaction
+        List<User> toSave = new ArrayList<>(pending.size());
+        for (Pending p : pending) {
+            p.user().setPasswordHash(passwordEncoder.encode(p.rawPassword()));
+            toSave.add(p.user());
+        }
+        try {
+            userRepo.saveAllAndFlush(toSave);
+        } catch (DataIntegrityViolationException e) {
+            // A concurrent request took a username/email after validation: nothing is committed
+            throw new IllegalArgumentException("Import failed: a username or email already exists. Nothing was imported.");
+        }
+        return new ImportResult(toSave.size(), 0, List.of());
+    }
+
+    /** Tenant-scoped lookup, then the actor's own scope. Null when the row must report "not found". */
+    private Center resolveCenter(String code, UUID ctxTenant, User actor, Map<String, Center> cache) {
+        String key = code.toUpperCase(Locale.ROOT);
+        if (cache.containsKey(key)) return cache.get(key);
+        Center found = (ctxTenant != null
+            ? centerRepo.findByTenantIdAndCodeIgnoreCaseAndDeletedAtIsNull(ctxTenant, code)
+            : centerRepo.findByCodeIgnoreCaseAndDeletedAtIsNull(code))
+            .filter(center -> policy.centerInScope(actor, center))
+            .orElse(null);
+        cache.put(key, found);
+        return found;
+    }
+
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) throw new IllegalArgumentException("File is empty");
+        String name = file.getOriginalFilename();
+        if (name == null || !name.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
+            throw new IllegalArgumentException("Only .xlsx files are accepted");
+        }
+        String type = file.getContentType();
+        if (type != null && !type.equalsIgnoreCase(XLSX_TYPE) && !type.equalsIgnoreCase("application/octet-stream")) {
+            throw new IllegalArgumentException("Only .xlsx files are accepted");
+        }
+        if (file.getSize() > maxBytes) {
+            throw new IllegalArgumentException("File is too large (max " + (maxBytes / 1024) + " KB)");
+        }
+    }
+
+    /** Reads the first sheet. Formula cells are rejected (never evaluated); blank rows are skipped. */
+    private List<RawRow> readRows(MultipartFile file, int columns) throws Exception {
+        DataFormatter formatter = new DataFormatter();
+        List<RawRow> rows = new ArrayList<>();
+        try (InputStream in = file.getInputStream(); Workbook wb = new XSSFWorkbook(in)) {
             Sheet sh = wb.getSheetAt(0);
             for (int i = 1; i <= sh.getLastRowNum(); i++) {
                 Row row = sh.getRow(i);
-                if (row == null || isBlankRow(row)) continue;
-                try {
-                    String username    = cell(row, 0);
-                    String password    = cell(row, 1);
-                    String fullName    = cell(row, 2);
-                    String fullNameAr  = cell(row, 3);
-                    String email       = cell(row, 4);
-                    String phone       = cell(row, 5);
-                    String complexName = cell(row, 6);
-                    String building    = cell(row, 7);
-                    String unit        = cell(row, 8);
-                    String centerCode  = cell(row, 9);
-
-                    if (!StringUtils.hasText(username) || !StringUtils.hasText(password)
-                            || !StringUtils.hasText(fullName)) {
-                        errors.add("Row " + (i + 1) + ": username, password, fullName are required");
-                        continue;
+                if (row == null) continue;
+                String[] cells = new String[columns];
+                boolean blank = true;
+                for (int col = 0; col < columns; col++) {
+                    Cell cell = row.getCell(col);
+                    if (cell == null) { cells[col] = ""; continue; }
+                    if (cell.getCellType() == CellType.FORMULA) {
+                        throw new IllegalArgumentException("Row " + (i + 1) + ": formulas are not allowed");
                     }
-                    if (userRepo.existsByUsernameAndDeletedAtIsNull(username)) {
-                        errors.add("Row " + (i + 1) + ": username '" + username + "' already exists");
-                        continue;
-                    }
-
-                    Center center = null;
-                    if (StringUtils.hasText(centerCode)) {
-                        center = centerRepo.findByCodeAndDeletedAtIsNull(centerCode).orElse(null);
-                        if (center == null) {
-                            errors.add("Row " + (i + 1) + ": center code '" + centerCode + "' not found");
-                            continue;
-                        }
-                    } else {
-                        errors.add("Row " + (i + 1) + ": centerCode is required");
-                        continue;
-                    }
-
-                    String resolvedEmail = StringUtils.hasText(email) ? email : username + "@smms.local";
-                    User user = User.builder()
-                        .username(username)
-                        .email(resolvedEmail)
-                        .passwordHash(passwordEncoder.encode(password))
-                        .fullName(fullName)
-                        .fullNameAr(StringUtils.hasText(fullNameAr) ? fullNameAr : null)
-                        .phone(StringUtils.hasText(phone) ? phone : null)
-                        .complexName(StringUtils.hasText(complexName) ? complexName : null)
-                        .buildingNumber(StringUtils.hasText(building) ? building : null)
-                        .unitNumber(StringUtils.hasText(unit) ? unit : null)
-                        .role(UserRole.resident)
-                        .center(center)
-                        .isActive(true)
-                        .build();
-                    userRepo.save(user);
-                    success++;
-                } catch (Exception e) {
-                    errors.add("Row " + (i + 1) + ": " + e.getMessage());
+                    cells[col] = cellText(cell, formatter);
+                    if (!cells[col].isEmpty()) blank = false;
                 }
+                if (blank) continue;
+                if (rows.size() >= maxRows) {
+                    throw new IllegalArgumentException("Too many rows (max " + maxRows + ")");
+                }
+                rows.add(new RawRow(i + 1, cells));
             }
+        } catch (java.io.IOException | org.apache.poi.ooxml.POIXMLException e) {
+            throw new IllegalArgumentException("The file is not a valid .xlsx workbook");
         }
-        return new ImportResult(success, errors);
+        return rows;
     }
 
-    @Transactional
-    public ImportResult importDepartments(MultipartFile file) throws Exception {
-        int success = 0;
-        List<String> errors = new ArrayList<>();
-
-        try (InputStream in = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(in)) {
-            Sheet sh = wb.getSheetAt(0);
-            for (int i = 1; i <= sh.getLastRowNum(); i++) {
-                Row row = sh.getRow(i);
-                if (row == null || isBlankRow(row)) continue;
-                try {
-                    String username    = cell(row, 0);
-                    String password    = cell(row, 1);
-                    String deptName    = cell(row, 2);
-                    String deptSuper   = cell(row, 3);
-                    String deptEmail   = cell(row, 4);
-                    String extNum      = cell(row, 5);
-                    String email       = cell(row, 6);
-                    String phone       = cell(row, 7);
-                    String centerCode  = cell(row, 8);
-
-                    if (!StringUtils.hasText(username) || !StringUtils.hasText(password)
-                            || !StringUtils.hasText(deptName)) {
-                        errors.add("Row " + (i + 1) + ": username, password, departmentName are required");
-                        continue;
-                    }
-                    if (userRepo.existsByUsernameAndDeletedAtIsNull(username)) {
-                        errors.add("Row " + (i + 1) + ": username '" + username + "' already exists");
-                        continue;
-                    }
-
-                    Center center = null;
-                    if (StringUtils.hasText(centerCode)) {
-                        center = centerRepo.findByCodeAndDeletedAtIsNull(centerCode).orElse(null);
-                        if (center == null) {
-                            errors.add("Row " + (i + 1) + ": center code '" + centerCode + "' not found");
-                            continue;
-                        }
-                    } else {
-                        errors.add("Row " + (i + 1) + ": centerCode is required");
-                        continue;
-                    }
-
-                    String resolvedEmail = StringUtils.hasText(email) ? email : username + "@smms.local";
-                    User user = User.builder()
-                        .username(username)
-                        .email(resolvedEmail)
-                        .passwordHash(passwordEncoder.encode(password))
-                        .fullName(StringUtils.hasText(deptName) ? deptName : username)
-                        .phone(StringUtils.hasText(phone) ? phone : null)
-                        .departmentName(deptName)
-                        .departmentSupervisor(StringUtils.hasText(deptSuper) ? deptSuper : null)
-                        .departmentEmail(StringUtils.hasText(deptEmail) ? deptEmail : null)
-                        .extensionNumber(StringUtils.hasText(extNum) ? extNum : null)
-                        .role(UserRole.department)
-                        .center(center)
-                        .isActive(true)
-                        .build();
-                    userRepo.save(user);
-                    success++;
-                } catch (Exception e) {
-                    errors.add("Row " + (i + 1) + ": " + e.getMessage());
-                }
-            }
+    /**
+     * Numeric cells (phone numbers, codes) are written as plain digits: the General format of
+     * DataFormatter would turn long numbers into scientific notation.
+     */
+    private static String cellText(Cell cell, DataFormatter formatter) {
+        if (cell.getCellType() == CellType.NUMERIC && !DateUtil.isCellDateFormatted(cell)) {
+            return java.math.BigDecimal.valueOf(cell.getNumericCellValue()).stripTrailingZeros().toPlainString();
         }
-        return new ImportResult(success, errors);
+        return formatter.formatCellValue(cell).trim();
     }
+
+    private static List<String> capErrors(List<String> errors) {
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < Math.min(errors.size(), MAX_REPORTED_ERRORS); i++) {
+            out.add(abbreviate(errors.get(i), MAX_ERROR_LENGTH));
+        }
+        if (errors.size() > MAX_REPORTED_ERRORS) {
+            out.add("... and " + (errors.size() - MAX_REPORTED_ERRORS) + " more");
+        }
+        return out;
+    }
+
+    private static String abbreviate(String s) { return abbreviate(s, 50); }
+
+    private static String abbreviate(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max) + "...";
+    }
+
+    private static String blankToNull(String s) { return StringUtils.hasText(s) ? s : null; }
 
     // ── Helpers ────────────────────────────────────────────────
 
@@ -223,30 +340,11 @@ public class BulkImportService {
         }
     }
 
-    private String cell(Row row, int col) {
-        Cell c = row.getCell(col);
-        if (c == null) return "";
-        return switch (c.getCellType()) {
-            case STRING  -> c.getStringCellValue().trim();
-            case NUMERIC -> String.valueOf((long) c.getNumericCellValue());
-            default      -> "";
-        };
-    }
-
-    private boolean isBlankRow(Row row) {
-        for (int i = 0; i < row.getLastCellNum(); i++) {
-            Cell c = row.getCell(i);
-            if (c != null && c.getCellType() != CellType.BLANK
-                    && StringUtils.hasText(c.toString())) return false;
-        }
-        return true;
-    }
-
     private byte[] toBytes(XSSFWorkbook wb) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         wb.write(out);
         return out.toByteArray();
     }
 
-    public record ImportResult(int success, List<String> errors) {}
+    public record ImportResult(int success, int failed, List<String> errors) {}
 }

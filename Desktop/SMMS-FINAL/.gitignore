@@ -1,0 +1,26 @@
+# Environment secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# Temp files of setup.sh secret rewriting
+.env.??????
+
+# Deployment guard marker
+.smms-deployed-commit
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker runtime
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/

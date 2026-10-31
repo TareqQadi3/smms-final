@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useThemeStore } from '@/store/themeStore';
-import { authApi } from '@/lib/api';
+import { authApi, safeNextPath } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
 
   useEffect(() => { initTheme(); }, [initTheme]);
+  // ?expired=1 and ?next=<path> are set by the API layer when a session ends (see lib/api.ts)
+  const [expired, setExpired] = useState(false);
+  const [nextPath, setNextPath] = useState<string | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    setExpired(q.get('expired') === '1');
+    setNextPath(safeNextPath(q.get('next')));
+  }, []);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,7 +42,7 @@ export default function LoginPage() {
     setError('');
     try {
       const res = await authApi.login(username, password);
-      const { token, role, userId, username: uname, fullName, fullNameAr, centerId, centerName, centerNameAr } = res.data;
+      const { token, role, userId, username: uname, fullName, fullNameAr, centerId, centerName, centerNameAr, passwordChangeRequired } = res.data;
       const user = {
         id:         userId,
         username:   uname || username,
@@ -43,10 +51,13 @@ export default function LoginPage() {
         email:      '',
         role,
         active:     true,
+        passwordChangeRequired: passwordChangeRequired === true,
         ...(centerId ? { center: { id: centerId, name: centerName || '', nameAr: centerNameAr || '', code: '' } } : {}),
       };
       setAuth(user, token);
-      if (role === 'technician') router.push('/my-tasks');
+      if (passwordChangeRequired === true) router.push('/settings?tab=security');
+      else if (nextPath) router.push(nextPath);
+      else if (role === 'technician') router.push('/tech');
       else if (role === 'resident' || role === 'department') router.push('/new-request');
       else router.push('/dashboard');
     } catch {
@@ -63,8 +74,9 @@ export default function LoginPage() {
     >
       {/* Lang Toggle */}
       <button
+        type="button"
         onClick={() => setLang(isAr ? 'en' : 'ar')}
-        className="absolute top-4 right-4 flex items-center gap-1.5 text-white/70 hover:text-white text-sm bg-white/10 px-3 py-1.5 rounded-full transition"
+        className="absolute top-4 end-4 flex items-center gap-1.5 text-white/70 hover:text-white text-sm bg-white/10 px-3 py-1.5 min-h-10 rounded-full transition outline-none focus-visible:ring-2 focus-visible:ring-white/80"
       >
         <Globe size={14} />
         {isAr ? 'English' : 'عربي'}
@@ -93,13 +105,13 @@ export default function LoginPage() {
                 {isAr ? 'اسم المستخدم' : 'Username'}
               </Label>
               <div className="relative">
-                <User size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+                <User size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 start-3`} />
                 <Input
                   id="username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={isAr ? 'أدخل اسم المستخدم' : 'Enter username'}
-                  className={`${isAr ? 'pr-9' : 'pl-9'} h-11`}
+                  className={`ps-9 h-11`}
                   disabled={loading}
                   autoComplete="username"
                 />
@@ -112,30 +124,38 @@ export default function LoginPage() {
                 {isAr ? 'كلمة المرور' : 'Password'}
               </Label>
               <div className="relative">
-                <Lock size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${isAr ? 'right-3' : 'left-3'}`} />
+                <Lock size={16} className={`absolute top-1/2 -translate-y-1/2 text-gray-400 start-3`} />
                 <Input
                   id="password"
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder={isAr ? 'أدخل كلمة المرور' : 'Enter password'}
-                  className={`${isAr ? 'pr-9 pl-9' : 'pl-9 pr-9'} h-11`}
+                  className={`ps-9 pe-9 h-11`}
                   disabled={loading}
                   autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPass(!showPass)}
-                  className={`absolute top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 ${isAr ? 'left-3' : 'right-3'}`}
+                  aria-label={showPass ? (isAr ? 'إخفاء كلمة المرور' : 'Hide password') : (isAr ? 'إظهار كلمة المرور' : 'Show password')}
+                  aria-pressed={showPass}
+                  className={`absolute top-1/2 -translate-y-1/2 end-0 p-3 text-gray-500 hover:text-gray-700 rounded outline-none focus-visible:ring-2 focus-visible:ring-ring/50`}
                 >
                   {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
+            {expired && !error && (
+              <div role="status" className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2.5 rounded-lg">
+                {isAr ? 'انتهت جلستك. سجّل الدخول مرة أخرى للمتابعة.' : 'Your session expired. Sign in again to continue.'}
+              </div>
+            )}
+
             {/* Error */}
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2.5 rounded-lg">
+              <div role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2.5 rounded-lg">
                 {error}
               </div>
             )}
@@ -158,7 +178,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-white/40 text-xs mt-6">
+        <p className="text-center text-white/70 text-xs mt-6">
           SMMS © {new Date().getFullYear()}
         </p>
       </div>

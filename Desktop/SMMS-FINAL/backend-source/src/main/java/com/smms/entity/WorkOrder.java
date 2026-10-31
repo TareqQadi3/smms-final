@@ -127,4 +127,50 @@ public class WorkOrder extends BaseEntity {
 
     @Column(name = "locked_at")
     private Instant lockedAt;
+
+    // ── Feature program 1 columns (V13) ───────────────────────
+
+    /**
+     * Optimistic lock. Wrapper type on purpose: a new (unsaved) row has a null version, which keeps
+     * Spring Data's isNew() decision unchanged; the column itself is NOT NULL DEFAULT 0.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "asset_id")
+    private Asset asset;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
+    /** Non-null while the SLA clock is paused (request for information). */
+    @Column(name = "sla_paused_at")
+    private Instant slaPausedAt;
+
+    @Column(name = "sla_paused_seconds", nullable = false)
+    @Builder.Default
+    private long slaPausedSeconds = 0L;
+
+    @Column(name = "is_emergency", nullable = false)
+    @Builder.Default
+    private boolean emergency = false;
+
+    @Column(name = "emergency_declared_at")
+    private Instant emergencyDeclaredAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "emergency_declared_by_id")
+    private User emergencyDeclaredBy;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "requester_confirmation", length = 10)
+    private RequesterConfirmation requesterConfirmation;
+
+    @Column(name = "requester_confirmed_at")
+    private Instant requesterConfirmedAt;
+
+    public boolean isSlaPaused() { return slaPausedAt != null; }
 }

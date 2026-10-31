@@ -14,13 +14,12 @@ import com.smms.repository.TenantSubscriptionRepository;
 import com.smms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.Statement;
 import java.util.List;
 
 @Slf4j
@@ -30,29 +29,23 @@ public class DataInitializer implements CommandLineRunner {
 
     private final UserRepository userRepo;
     private final PasswordEncoder passwordEncoder;
-    private final DataSource dataSource;
     private final MaintenanceTypeRepository maintenanceTypeRepo;
     private final TenantRepository tenantRepo;
     private final TenantSubscriptionRepository subscriptionRepo;
+    private final JdbcTemplate jdbc;
+
+    @Value("${SMMS_INITIAL_ADMIN_PASSWORD:}")
+    private String initialAdminPassword;
 
     @Override
     public void run(String... args) {
-        migrateEnums();
+        // Schema and tenant data migrations live in Flyway (db/migration). This class only inserts
+        // missing seed rows and never rewrites existing data; tenant-less rows are reported by
+        // TenantIntegrityReporter and fixed by an admin (POST /api/admin/users/{id}/tenant).
         Tenant defaultTenant = ensureDefaultTenant();
-        backfillTenantId(defaultTenant.getId());
         ensureDefaultSubscription(defaultTenant);
         createAdminIfAbsent();
         seedMaintenanceTypes(defaultTenant);
-    }
-
-    private void migrateEnums() {
-        try (Connection conn = dataSource.getConnection();
-             Statement stmt = conn.createStatement()) {
-            stmt.execute("ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'other'");
-            log.debug("user_role enum migration OK");
-        } catch (Exception e) {
-            log.warn("user_role enum migration skipped: {}", e.getMessage());
-        }
     }
 
     /** Creates the default tenant if not present; returns it. */
@@ -68,44 +61,6 @@ public class DataInitializer implements CommandLineRunner {
                 log.info("Default tenant created: id={}", t.getId());
                 return t;
             });
-    }
-
-    /**
-     * Backfills tenant_id for every row that was created before multi-tenancy was introduced.
-     * Safe to run multiple times — only updates NULL rows.
-     */
-    private void backfillTenantId(java.util.UUID tenantId) {
-        String[] tables = {
-            "users", "regions", "centers", "control_rooms", "work_orders",
-            "maintenance_types", "ticket_history", "notifications", "attachments",
-            "departments", "assets", "inventory_items", "inventory_movements"
-        };
-        try (Connection conn = dataSource.getConnection();
-             Statement stmt = conn.createStatement()) {
-            int total = 0;
-            for (String table : tables) {
-                try {
-                    // For users table: exclude system_admin (platform-level, no tenant)
-                    String where = table.equals("users")
-                        ? "WHERE tenant_id IS NULL AND role::text != 'system_admin'"
-                        : "WHERE tenant_id IS NULL";
-                    int rows = stmt.executeUpdate(
-                        "UPDATE " + table + " SET tenant_id = '" + tenantId + "' " + where);
-                    total += rows;
-                } catch (Exception e) {
-                    log.debug("Backfill skip {}: {}", table, e.getMessage());
-                }
-            }
-            // Ensure existing system_admin users always have null tenantId
-            try {
-                stmt.executeUpdate("UPDATE users SET tenant_id = NULL WHERE role::text = 'system_admin'");
-            } catch (Exception e) {
-                log.debug("Admin tenantId clear skip: {}", e.getMessage());
-            }
-            if (total > 0) log.info("Backfilled tenant_id for {} rows across {} tables", total, tables.length);
-        } catch (Exception e) {
-            log.warn("Tenant backfill failed: {}", e.getMessage());
-        }
     }
 
     private void ensureDefaultSubscription(Tenant tenant) {
@@ -155,29 +110,50 @@ public class DataInitializer implements CommandLineRunner {
         log.info("Seeded {} default maintenance types", defaults.size());
     }
 
+    /** Public default of the seeded admin, kept for installs that do not set an initial password. */
+    static final String LEGACY_DEFAULT_PASSWORD = "Admin@1234";
+
+    /**
+     * Creates the `admin` account only when no row named admin exists AT ALL, soft-deleted ones
+     * included: deleting the admin must not bring it back at the next start with a public password.
+     * The password comes from SMMS_INITIAL_ADMIN_PASSWORD (never logged); without it the legacy
+     * default is used and the account is flagged must_change_password. Existing accounts are never
+     * touched.
+     */
     private void createAdminIfAbsent() {
-        if (userRepo.existsByUsernameAndDeletedAtIsNull("admin")) {
-            log.info("Admin account already exists — skipping seed");
+        Integer existing = jdbc.queryForObject(
+            "SELECT count(*) FROM users WHERE lower(username) = 'admin'", Integer.class);
+        if (existing != null && existing > 0) {
+            log.info("Admin account already exists (or was deleted) — skipping seed");
             return;
         }
+
+        String configured = initialAdminPassword == null ? "" : initialAdminPassword;
+        boolean useConfigured = !configured.isEmpty();
+        if (useConfigured && (configured.length() < 12 || configured.length() > 128)) {
+            log.error("SMMS_INITIAL_ADMIN_PASSWORD must be 12-128 characters: admin account NOT created");
+            return;
+        }
+        String password = useConfigured ? configured : LEGACY_DEFAULT_PASSWORD;
 
         User admin = User.builder()
             .username("admin")
             .email("admin@smms.local")
-            .passwordHash(passwordEncoder.encode("Admin@1234"))
+            .passwordHash(passwordEncoder.encode(password))
             .fullName("System Administrator")
             .fullNameAr("مدير النظام")
             .role(UserRole.system_admin)
             .isActive(true)
+            .mustChangePassword(!useConfigured)
             .build();
         // tenantId remains null — platform admin has no tenant restriction
 
         userRepo.save(admin);
         log.info("=================================================");
-        log.info("  Default admin account created:");
-        log.info("  Username : admin");
-        log.info("  Password : Admin@1234");
-        log.info("  Please change the password after first login!");
+        log.info("  Admin account created: username 'admin'");
+        log.info(useConfigured
+            ? "  Password: the value of SMMS_INITIAL_ADMIN_PASSWORD"
+            : "  Password: the public default. Sign in and change it now!");
         log.info("=================================================");
     }
 }

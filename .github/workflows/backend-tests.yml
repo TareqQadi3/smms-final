@@ -2,8 +2,11 @@ name: Backend Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   test:

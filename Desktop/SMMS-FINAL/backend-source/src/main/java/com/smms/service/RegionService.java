@@ -6,7 +6,11 @@ import com.smms.dto.response.RegionResponse;
 import com.smms.entity.Region;
 import com.smms.exception.ResourceNotFoundException;
 import com.smms.repository.RegionRepository;
+import com.smms.entity.User;
+import com.smms.enums.UserRole;
+import com.smms.security.AdminScopePolicy;
 import com.smms.security.TenantSecurityService;
+import org.springframework.security.access.AccessDeniedException;
 import com.smms.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,9 +27,29 @@ public class RegionService {
 
     private final RegionRepository regionRepo;
     private final TenantSecurityService tenantSecurity;
+    private final AdminScopePolicy policy;
 
     @Transactional(readOnly = true)
-    public List<RegionResponse> listAll() {
+    public List<RegionResponse> listAll(User actor) {
+        if (actor == null || actor.getRole() == UserRole.system_admin) return listAllRegions();
+        // Everybody else sees only the region they belong to (a supervisor's own, or their center's)
+        UUID ownRegion = null;
+        if (actor.getRole() == UserRole.region_supervisor) {
+            ownRegion = actor.getRegion() != null ? actor.getRegion().getId() : null;
+        } else if (actor.getCenter() != null) {
+            try {
+                var center = tenantSecurity.requireCenter(actor.getCenter().getId());
+                ownRegion = center.getRegion() != null ? center.getRegion().getId() : null;
+            } catch (ResourceNotFoundException e) {
+                ownRegion = null;
+            }
+        }
+        if (ownRegion == null) return List.of();
+        final UUID visible = ownRegion;
+        return listAllRegions().stream().filter(r -> visible.equals(r.getId())).toList();
+    }
+
+    private List<RegionResponse> listAllRegions() {
         UUID tenantId = TenantContext.get();
         if (tenantId != null) {
             return regionRepo.findAllByTenantIdAndIsActiveTrueAndDeletedAtIsNull(tenantId)
@@ -35,27 +59,45 @@ public class RegionService {
             .stream().map(this::toResponse).toList();
     }
 
-    public RegionResponse create(CreateRegionRequest req) {
-        if (regionRepo.findByCodeAndDeletedAtIsNull(req.getCode()).isPresent()) {
+    /** Regions are managed by system_admin only. The tenant comes from the context, or from tenantId for the platform admin. */
+    public RegionResponse create(CreateRegionRequest req, User actor) {
+        requireSystemAdmin(actor);
+        UUID tenantId = policy.resolveTenantForNewEntity(req.getTenantId());
+        String code = req.getCode().toUpperCase();
+        if (regionRepo.findByCodeAndDeletedAtIsNull(code).isPresent()) {
             throw new IllegalArgumentException("Region code already exists: " + req.getCode());
         }
         Region region = Region.builder()
             .name(req.getName())
             .nameAr(req.getNameAr())
-            .code(req.getCode().toUpperCase())
+            .code(code)
             .isActive(true)
             .build();
-        region.setTenantId(TenantContext.get());
+        region.setTenantId(tenantId);
         Region saved = regionRepo.save(region);
         return toResponse(saved);
     }
 
-    public RegionResponse update(UUID id, UpdateRegionRequest req) {
+    public RegionResponse update(UUID id, UpdateRegionRequest req, User actor) {
+        requireSystemAdmin(actor);
         Region region = tenantSecurity.requireRegion(id);
         if (StringUtils.hasText(req.getName()))   region.setName(req.getName());
         if (StringUtils.hasText(req.getNameAr())) region.setNameAr(req.getNameAr());
-        if (StringUtils.hasText(req.getCode()))   region.setCode(req.getCode().toUpperCase());
+        if (StringUtils.hasText(req.getCode())) {
+            String code = req.getCode().toUpperCase();
+            if (!code.equals(region.getCode())
+                    && regionRepo.findByCodeAndDeletedAtIsNull(code).isPresent()) {
+                throw new IllegalArgumentException("Region code already exists: " + req.getCode());
+            }
+            region.setCode(code);
+        }
         return toResponse(regionRepo.save(region));
+    }
+
+    private static void requireSystemAdmin(User actor) {
+        if (actor == null || actor.getRole() != UserRole.system_admin) {
+            throw new AccessDeniedException("Only a system administrator can manage regions");
+        }
     }
 
     private RegionResponse toResponse(Region r) {

@@ -1,0 +1,19 @@
+{
+  "name": "SMMS",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb"
+  },
+  "postStartCommand": "bash Desktop/SMMS-FINAL/setup.sh --auto",
+  "forwardPorts": [80],
+  "portsAttributes": {
+    "80": {
+      "label": "SMMS App",
+      "onAutoForward": "openBrowser"
+    }
+  },
+  "otherPortsAttributes": {
+    "onAutoForward": "ignore"
+  }
+}

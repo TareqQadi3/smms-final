@@ -96,10 +96,12 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
       {/* Left */}
       <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={onMenuClick}
-          className="lg:hidden p-1.5 rounded-md hover:bg-accent text-muted-foreground"
+          aria-label={lang === 'ar' ? 'فتح القائمة' : 'Open menu'}
+          className="lg:hidden inline-flex size-10 items-center justify-center rounded-md hover:bg-accent text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 outline-none"
         >
-          <Menu size={20} />
+          <Menu size={20} aria-hidden="true" />
         </button>
         <h1 className="text-sm font-semibold text-foreground hidden sm:block">
           {tr.appName}
@@ -107,13 +109,13 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
       </div>
 
       {/* Right */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
 
         {/* Theme Switcher */}
         <ThemeSwitcher />
 
         {/* Language */}
-        <Button variant="ghost" size="sm" onClick={toggleLang} className="gap-1.5 text-xs font-medium">
+        <Button variant="ghost" size="sm" onClick={toggleLang} aria-label={lang === 'ar' ? 'Switch to English' : 'التبديل إلى العربية'} className="gap-1.5 text-xs font-medium">
           <Globe size={15} />
           {lang === 'ar' ? 'EN' : 'عربي'}
         </Button>
@@ -126,10 +128,11 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
             className="relative"
             onClick={() => setNotifOpen(o => !o)}
             aria-label={lang === 'ar' ? 'الإشعارات' : 'Notifications'}
+            aria-expanded={notifOpen}
           >
             <Bell size={17} />
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 min-w-[16px] h-4 bg-destructive rounded-full text-[10px] font-bold text-white flex items-center justify-center px-0.5">
+              <span className="absolute top-1 end-1 min-w-[16px] h-4 bg-destructive rounded-full text-[10px] font-bold text-white flex items-center justify-center px-0.5">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
@@ -196,15 +199,13 @@ export default function Topbar({ onMenuClick }: TopbarProps) {
 
         {/* User Menu */}
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-2">
+          <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="gap-2" />}>
               <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-bold">
                 {user?.fullName?.charAt(0) || 'U'}
               </div>
               <span className="text-xs font-medium hidden sm:block max-w-[120px] truncate">
                 {user?.fullName}
               </span>
-            </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align={lang === 'ar' ? 'start' : 'end'} className="w-52">
             <div className="px-3 py-2">

@@ -34,6 +34,7 @@ class PlanEnforcementServiceTest {
     @Mock private UserRepository      userRepo;
     @Mock private WorkOrderRepository workOrderRepo;
     @Mock private CenterRepository    centerRepo;
+    @Mock private com.smms.cache.SubscriptionCache subscriptionCache;
 
     @InjectMocks
     private PlanEnforcementService service;
@@ -161,6 +162,56 @@ class PlanEnforcementServiceTest {
             assertThat(usage.users()).isEqualTo(100);
             assertThat(usage.tickets()).isEqualTo(2000);
             assertThat(usage.centers()).isEqualTo(15);
+        }
+    }
+
+    @Nested
+    @DisplayName("Limits for a tenant other than the request context (platform admin creating rows)")
+    class ExplicitTenant {
+
+        private com.smms.entity.TenantSubscription sub(PlanType plan) {
+            return com.smms.entity.TenantSubscription.builder().tenantId(tenantId).planType(plan).build();
+        }
+
+        @Test
+        void platformAdminCreationIsLimitedByThePlanOfTheTargetTenant() {
+            TenantContext.clear();
+            when(subscriptionCache.get(tenantId)).thenReturn(java.util.Optional.of(sub(PlanType.FREE)));
+            when(userRepo.countByTenantIdAndDeletedAtIsNull(tenantId)).thenReturn(10L);
+            assertThatThrownBy(() -> service.checkUserLimit(tenantId, 1)).isInstanceOf(PlanLimitExceededException.class);
+        }
+
+        @Test
+        void tenantWithoutSubscriptionDefaultsToFree() {
+            TenantContext.clear();
+            when(subscriptionCache.get(tenantId)).thenReturn(java.util.Optional.empty());
+            when(centerRepo.countByTenantIdAndDeletedAtIsNull(tenantId)).thenReturn(1L);
+            assertThatThrownBy(() -> service.checkCenterLimit(tenantId)).isInstanceOf(PlanLimitExceededException.class);
+        }
+
+        @Test
+        void enterpriseTargetTenantIsUnlimited() {
+            TenantContext.clear();
+            when(subscriptionCache.get(tenantId)).thenReturn(java.util.Optional.of(sub(PlanType.ENTERPRISE)));
+            assertThatCode(() -> {
+                service.checkUserLimit(tenantId, 500);
+                service.checkCenterLimit(tenantId);
+            }).doesNotThrowAnyException();
+            verifyNoInteractions(userRepo, centerRepo);
+        }
+
+        @Test
+        void bulkCountChecksCurrentPlusAdditional() {
+            asTenant(PlanType.FREE);
+            when(userRepo.countByTenantIdAndDeletedAtIsNull(tenantId)).thenReturn(7L);
+            assertThatCode(() -> service.checkUserLimit(tenantId, 3)).doesNotThrowAnyException();
+            assertThatThrownBy(() -> service.checkUserLimit(tenantId, 4)).isInstanceOf(PlanLimitExceededException.class);
+        }
+
+        @Test
+        void nullTenantIsNeverLimited() {
+            assertThatCode(() -> service.checkUserLimit(null, 5)).doesNotThrowAnyException();
+            verifyNoInteractions(userRepo);
         }
     }
 }

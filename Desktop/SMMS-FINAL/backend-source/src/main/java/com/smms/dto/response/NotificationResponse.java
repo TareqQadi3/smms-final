@@ -12,6 +12,8 @@ public class NotificationResponse {
     String type;
     String title;
     String body;
+    /** Work order the notification is about; null for notifications without one. */
+    UUID workOrderId;
     boolean read;
     Instant createdAt;
 }

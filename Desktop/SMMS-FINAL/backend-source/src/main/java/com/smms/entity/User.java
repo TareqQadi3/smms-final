@@ -25,6 +25,11 @@ public class User extends BaseEntity implements UserDetails {
     @JoinColumn(name = "center_id")
     private Center center;
 
+    /** Link to a real department row (V13); the free-text department_* columns stay as display fallback. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "department_id")
+    private Department department;
+
     @Column(nullable = false, unique = true, length = 100)
     private String username;
 
@@ -81,6 +86,15 @@ public class User extends BaseEntity implements UserDetails {
 
     @Column(name = "last_login")
     private Instant lastLogin;
+
+    /** Soft flag: the client should send the user to the change-password screen. */
+    @Column(name = "must_change_password", nullable = false)
+    @Builder.Default
+    private boolean mustChangePassword = false;
+
+    /** Tokens issued before this instant are refused (deactivation, admin password reset). */
+    @Column(name = "tokens_valid_after")
+    private Instant tokensValidAfter;
 
     @Override public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));

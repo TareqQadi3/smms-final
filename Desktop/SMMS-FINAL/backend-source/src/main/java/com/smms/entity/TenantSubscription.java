@@ -5,7 +5,9 @@ import com.smms.enums.TenantStatus;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -24,12 +26,14 @@ public class TenantSubscription {
     private UUID tenantId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "plan_type", nullable = false, length = 20)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "plan_type", nullable = false, columnDefinition = "plan_type")
     @Builder.Default
     private PlanType planType = PlanType.FREE;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 20)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "status", nullable = false, columnDefinition = "tenant_status")
     @Builder.Default
     private TenantStatus status = TenantStatus.ACTIVE;
 

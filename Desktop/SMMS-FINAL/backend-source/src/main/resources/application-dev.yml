@@ -8,7 +8,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:
@@ -53,7 +53,7 @@ management:
 
 app:
   jwt:
-    secret: dGhpcy1pcy1hLXZlcnktbG9uZy1zZWNyZXQta2V5LWZvci1zbW1zLWRldi0yMDI0LXVzZS1pbi1wcm9kdWN0aW9uLTEyMw==
+    secret: ${JWT_SECRET}
     expiry-hours: 8
     refresh-expiry-days: 7
   upload:
@@ -65,6 +65,24 @@ app:
     medium: 24
     low: 48
   base-url: http://localhost:9090
+  # Public ticket status page (token link + rate limit). Enabled for local development only.
+  public-status:
+    enabled: true
+    rate-limit-per-minute: 30
+    link-ttl-days: 30
+  # Purchase orders above this total need a manager approval (empty = no limit)
+  procurement:
+    manager-approval-limit:
+  notifications:
+    email:
+      enabled: false
+      from: "SMMS <noreply@smms.local>"
+      subject-prefix: "[SMMS] "
+    sms:
+      enabled: false
+      url:
+      token: ${SMS_TOKEN:}
+      sender-id: SMMS
 
 logging:
   level:

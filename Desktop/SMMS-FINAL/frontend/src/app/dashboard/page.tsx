@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuthStore } from '@/store/authStore';
-import { useT, statusColors, priorityColors } from '@/lib/i18n';
+import { useT, statusColors, priorityColors, tStatus, tPriority } from '@/lib/i18n';
 import { dashboardApi, workOrderApi } from '@/lib/api';
 import { DashboardStats, WorkOrder } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,7 +14,8 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
 } from 'recharts';
-import { format } from 'date-fns';
+import { formatDate } from '@/lib/utils';
+import { StateMessage } from '@/components/ui/state-message';
 import Link from 'next/link';
 
 const MANAGEMENT_ROLES = ['system_admin','region_supervisor','hospital_supervisor','maintenance_manager','electrical_manager','operating_company_manager'];
@@ -28,10 +29,13 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentOrders, setRecentOrders] = useState<WorkOrder[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const role = user?.role || '';
     const load = async () => {
+      setLoadError(false);
       try {
         let statsData = null;
         if (MANAGEMENT_ROLES.includes(role)) {
@@ -47,11 +51,11 @@ export default function DashboardPage() {
         setStats(statsData);
         const ordersRes = await workOrderApi.getAll({ page: 0, size: 5 });
         setRecentOrders(ordersRes.data?.content || []);
-      } catch { /* silent */ }
+      } catch { setLoadError(true); }
       finally { setLoading(false); }
     };
     if (user) load();
-  }, [user]);
+  }, [user, reloadKey]);
 
   const statCards = stats ? [
     { label: isAr ? 'جديد' : 'New',              value: stats.new || 0,               icon: <ClipboardList size={22} />, color: 'text-blue-600',   bg: 'bg-blue-50 dark:bg-blue-950' },
@@ -59,7 +63,7 @@ export default function DashboardPage() {
     { label: isAr ? 'قيد التنفيذ' : 'In Progress',value: stats.in_progress || 0,      icon: <Wrench size={22} />,        color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-950' },
     { label: isAr ? 'انتظار موافقة' : 'Approval', value: stats.waiting_approval || 0, icon: <AlertTriangle size={22} />, color: 'text-red-600',    bg: 'bg-red-50 dark:bg-red-950' },
     { label: isAr ? 'انتظار مواد' : 'Materials',  value: stats.waiting_materials || 0,icon: <Package size={22} />,       color: 'text-amber-600',  bg: 'bg-amber-50 dark:bg-amber-950' },
-    { label: isAr ? 'مكتمل' : 'Completed',        value: stats.completed || 0,         icon: <CheckCircle size={22} />,   color: 'text-green-600',  bg: 'bg-green-50 dark:bg-green-950' },
+    { label: isAr ? 'مكتمل' : 'Completed',        value: stats.completed || 0,         icon: <CheckCircle size={22} />,   color: 'text-green-700 dark:text-green-500',  bg: 'bg-green-50 dark:bg-green-950' },
     { label: isAr ? 'مغلق' : 'Closed',            value: stats.closed || 0,            icon: <TrendingUp size={22} />,    color: 'text-gray-600',   bg: 'bg-gray-100 dark:bg-gray-800' },
     { label: isAr ? 'ملغي' : 'Cancelled',         value: stats.cancelled || 0,         icon: <XCircle size={22} />,       color: 'text-red-400',    bg: 'bg-red-50 dark:bg-red-950' },
   ] : [];
@@ -105,6 +109,14 @@ export default function DashboardPage() {
             {isAr ? 'نظرة عامة على جميع طلبات الصيانة' : 'Overview of all maintenance requests'}
           </p>
         </div>
+
+        {loadError && (
+          <Card className="shadow-sm">
+            <StateMessage kind="error" onRetry={() => { setLoading(true); setReloadKey(k => k + 1); }} retryLabel={isAr ? 'إعادة المحاولة' : 'Try again'}>
+              {isAr ? 'تعذّر تحميل بيانات اللوحة. تحقق من الاتصال ثم أعد المحاولة.' : 'Unable to load the dashboard. Check your connection and try again.'}
+            </StateMessage>
+          </Card>
+        )}
 
         {/* Stats Grid */}
         {stats && statCards.length > 0 && (
@@ -162,7 +174,7 @@ export default function DashboardPage() {
                 {[
                   { label: isAr ? 'إجمالي النشطة' : 'Total Active', value: (stats.new||0) + (stats.under_review||0) + (stats.assigned||0) + (stats.in_progress||0), color: 'text-blue-600' },
                   { label: isAr ? 'تحتاج تدخل' : 'Needs Attention', value: (stats.waiting_approval||0) + (stats.waiting_materials||0), color: 'text-red-600' },
-                  { label: isAr ? 'مكتملة ومغلقة' : 'Completed & Closed', value: (stats.completed||0) + (stats.closed||0), color: 'text-green-600' },
+                  { label: isAr ? 'مكتملة ومغلقة' : 'Completed & Closed', value: (stats.completed||0) + (stats.closed||0), color: 'text-green-700 dark:text-green-500' },
                   { label: isAr ? 'ملغية' : 'Cancelled', value: stats.cancelled||0, color: 'text-muted-foreground' },
                 ].map((item) => (
                   <div key={item.label} className="flex justify-between items-center py-2 border-b border-border last:border-0">
@@ -182,14 +194,14 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="p-0">
             {recentOrders.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8 text-sm">{tr.noData}</p>
+              loadError ? null : <StateMessage>{isAr ? 'لا توجد بلاغات حديثة.' : 'No recent tickets.'}</StateMessage>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="table-scroll">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      {[tr.ticketNumber, tr.title, tr.status, tr.priority, tr.date].map(h => (
-                        <th key={h} className="text-start px-4 py-3 font-medium text-muted-foreground">{h}</th>
+                      {[tr.ticketNumber, tr.title, tr.status, tr.priority, tr.date].map((h, i) => (
+                        <th key={h} className={`text-start px-4 py-3 font-medium text-muted-foreground ${i === 2 ? 'max-md:hidden' : ''}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -197,23 +209,24 @@ export default function DashboardPage() {
                     {recentOrders.map((wo) => (
                       <tr key={wo.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3">
-                          <Link href={`/work-orders/${wo.id}`} className="font-mono text-xs text-primary font-semibold hover:underline">
-                            {wo.ticketNumber}
+                          <Link href={`/work-orders/${wo.id}`} className="font-mono text-xs text-primary font-semibold hover:underline whitespace-nowrap tabular-nums inline-flex min-h-10 items-center">
+                            <bdi dir="ltr">{wo.ticketNumber}</bdi>
                           </Link>
+                          <br /><span className={`md:hidden mt-1.5 inline-block px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || 'bg-gray-100'}`}>{tStatus(wo.status, lang)}</span>
                         </td>
                         <td className="px-4 py-3 max-w-[200px] truncate text-foreground font-medium">{wo.title}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 whitespace-nowrap max-md:hidden">
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[wo.status] || 'bg-gray-100'}`}>
-                            {statusLabel[wo.status] || wo.status}
+                            {tStatus(wo.status, lang)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           <span className={`px-2 py-0.5 rounded text-xs font-medium border ${priorityColors[wo.priority] || ''}`}>
-                            {wo.priority}
+                            {tPriority(wo.priority, lang)}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-muted-foreground text-xs">
-                          {wo.createdAt ? format(new Date(wo.createdAt), 'dd/MM/yyyy') : '-'}
+                        <td className="px-4 py-3 text-muted-foreground text-xs whitespace-nowrap tabular-nums">
+                          {formatDate(wo.createdAt, lang)}
                         </td>
                       </tr>
                     ))}

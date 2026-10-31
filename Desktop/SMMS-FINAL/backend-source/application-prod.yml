@@ -28,13 +28,13 @@ spring:
       timeout: 3000ms
 
   mail:
-    host: ${MAIL_HOST}
-    port: ${MAIL_PORT}
-    username: ${MAIL_USERNAME}
-    password: ${MAIL_PASSWORD}
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
-      mail.smtp.auth: true
-      mail.smtp.starttls.enable: true
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
 
   servlet:
     multipart:
@@ -58,6 +58,9 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+  health:
+    mail:
+      enabled: false
 
 app:
   jwt:
@@ -73,6 +76,25 @@ app:
     medium: ${SLA_MEDIUM_HOURS:24}
     low: ${SLA_LOW_HOURS:48}
   base-url: ${APP_BASE_URL}
+  # Public ticket status page: OFF in production unless explicitly enabled (needs X-Real-IP from the proxy)
+  public-status:
+    enabled: ${PUBLIC_STATUS_ENABLED:false}
+    rate-limit-per-minute: ${PUBLIC_STATUS_RATE_LIMIT_PER_MINUTE:30}
+    link-ttl-days: ${PUBLIC_STATUS_LINK_TTL_DAYS:30}
+  # Purchase orders above this total need a manager approval (empty = no limit)
+  procurement:
+    manager-approval-limit: ${PROCUREMENT_MANAGER_APPROVAL_LIMIT:}
+  # External channels are off by default; SMTP host/credentials are spring.mail.* (MAIL_* variables)
+  notifications:
+    email:
+      enabled: ${NOTIFY_EMAIL_ENABLED:false}
+      from: ${MAIL_FROM:SMMS <noreply@smms.local>}
+      subject-prefix: "[SMMS] "
+    sms:
+      enabled: ${NOTIFY_SMS_ENABLED:false}
+      url: ${SMS_URL:}
+      token: ${SMS_TOKEN:}
+      sender-id: ${SMS_SENDER_ID:SMMS}
 
 logging:
   level:

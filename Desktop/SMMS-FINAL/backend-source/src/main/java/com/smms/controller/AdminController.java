@@ -34,41 +34,46 @@ public class AdminController {
     // ── Regions ──────────────────────────────────────────────
     @GetMapping("/regions")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<RegionResponse>> regions() {
-        return ResponseEntity.ok(regionService.listAll());
+    public ResponseEntity<List<RegionResponse>> regions(@CurrentUser User actor) {
+        return ResponseEntity.ok(regionService.listAll(actor));
     }
 
     @PostMapping("/regions")
     @PreAuthorize("hasRole('system_admin')")
-    public ResponseEntity<RegionResponse> createRegion(@Valid @RequestBody CreateRegionRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(regionService.create(req));
+    public ResponseEntity<RegionResponse> createRegion(@Valid @RequestBody CreateRegionRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(regionService.create(req, actor));
     }
 
     @PutMapping("/regions/{id}")
     @PreAuthorize("hasRole('system_admin')")
     public ResponseEntity<RegionResponse> updateRegion(@PathVariable UUID id,
-                                                       @Valid @RequestBody UpdateRegionRequest req) {
-        return ResponseEntity.ok(regionService.update(id, req));
+                                                       @Valid @RequestBody UpdateRegionRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.ok(regionService.update(id, req, actor));
     }
 
     // ── Centers ───────────────────────────────────────────────
     @GetMapping("/centers")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<CenterResponse>> centers(@RequestParam(required = false) UUID regionId) {
-        return ResponseEntity.ok(centerService.list(regionId));
+    public ResponseEntity<List<CenterResponse>> centers(@RequestParam(required = false) UUID regionId,
+                                                        @CurrentUser User actor) {
+        return ResponseEntity.ok(centerService.list(regionId, actor));
     }
 
     @PostMapping("/centers")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor')")
-    public ResponseEntity<CenterResponse> createCenter(@Valid @RequestBody CreateCenterRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(centerService.create(req));
+    public ResponseEntity<CenterResponse> createCenter(@Valid @RequestBody CreateCenterRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(centerService.create(req, actor));
     }
 
     @PutMapping("/centers/{id}")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor')")
     public ResponseEntity<CenterResponse> updateCenter(@PathVariable UUID id,
-                                                       @Valid @RequestBody UpdateCenterRequest req) {
-        return ResponseEntity.ok(centerService.update(id, req));
+                                                       @Valid @RequestBody UpdateCenterRequest req,
+                                                       @CurrentUser User actor) {
+        return ResponseEntity.ok(centerService.update(id, req, actor));
     }
 
     // ── Control Rooms ─────────────────────────────────────────
@@ -78,17 +83,21 @@ public class AdminController {
             @RequestParam(required = false) UUID centerId,
             @CurrentUser User actor) {
 
-        // Roles that see ALL CRs in their scope (managers & operators)
-        if (isCenterScopedRole(actor.getRole())) {
-            UUID effectiveCenterId;
-            if (actor.getRole() == UserRole.system_admin
-                    || actor.getRole() == UserRole.region_supervisor) {
-                effectiveCenterId = centerId; // can pass any centerId
-            } else {
-                effectiveCenterId = actor.getCenter() != null
-                    ? actor.getCenter().getId() : centerId;
-            }
-            return ResponseEntity.ok(controlRoomService.list(effectiveCenterId));
+        UserRole role = actor.getRole();
+        if (role == UserRole.system_admin) {
+            return ResponseEntity.ok(controlRoomService.list(centerId));
+        }
+        if (role == UserRole.region_supervisor) {
+            // Only rooms of their own region; a centerId of another region matches nothing
+            UUID regionId = actor.getRegion() != null ? actor.getRegion().getId() : null;
+            return ResponseEntity.ok(regionId == null
+                ? List.<ControlRoomResponse>of() : controlRoomService.listByRegion(regionId, centerId));
+        }
+        if (isCenterScopedRole(role)) {
+            // The request's centerId is ignored: these roles only ever see their own center's rooms
+            UUID ownCenterId = actor.getCenter() != null ? actor.getCenter().getId() : null;
+            return ResponseEntity.ok(ownCenterId == null
+                ? List.<ControlRoomResponse>of() : controlRoomService.list(ownCenterId));
         }
 
         // resident / department / other / technician / warehouse:
@@ -103,11 +112,9 @@ public class AdminController {
         return ResponseEntity.ok(controlRoomService.listByIds(crIds));
     }
 
-    /** Roles that manage or operate — see all CRs in their center */
+    /** Roles that manage or operate inside one center: they see all CRs of that center */
     private boolean isCenterScopedRole(UserRole role) {
-        return role == UserRole.system_admin
-            || role == UserRole.region_supervisor
-            || role == UserRole.hospital_supervisor
+        return role == UserRole.hospital_supervisor
             || role == UserRole.maintenance_manager
             || role == UserRole.electrical_manager
             || role == UserRole.control_room;   // CR operators see their own center's CRs
@@ -116,14 +123,16 @@ public class AdminController {
     @PostMapping("/control-rooms")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor','hospital_supervisor')")
     public ResponseEntity<ControlRoomResponse> createControlRoom(
-            @Valid @RequestBody CreateControlRoomRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(controlRoomService.create(req));
+            @Valid @RequestBody CreateControlRoomRequest req,
+            @CurrentUser User actor) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(controlRoomService.create(req, actor));
     }
 
     @PutMapping("/control-rooms/{id}")
     @PreAuthorize("hasAnyRole('system_admin','region_supervisor','hospital_supervisor')")
     public ResponseEntity<ControlRoomResponse> updateControlRoom(@PathVariable UUID id,
-                                                                 @Valid @RequestBody UpdateControlRoomRequest req) {
-        return ResponseEntity.ok(controlRoomService.update(id, req));
+                                                                 @Valid @RequestBody UpdateControlRoomRequest req,
+                                                                 @CurrentUser User actor) {
+        return ResponseEntity.ok(controlRoomService.update(id, req, actor));
     }
 }

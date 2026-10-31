@@ -5,9 +5,15 @@ import com.smms.dto.request.UpdateControlRoomRequest;
 import com.smms.dto.response.ControlRoomResponse;
 import com.smms.entity.Center;
 import com.smms.entity.ControlRoom;
+import com.smms.enums.ControlRoomType;
+import com.smms.exception.ConflictException;
 import com.smms.exception.ResourceNotFoundException;
 import com.smms.repository.ControlRoomRepository;
+import com.smms.entity.User;
+import com.smms.enums.UserRole;
+import com.smms.security.AdminScopePolicy;
 import com.smms.security.TenantSecurityService;
+import org.springframework.security.access.AccessDeniedException;
 import com.smms.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,6 +31,7 @@ public class ControlRoomService {
 
     private final ControlRoomRepository controlRoomRepo;
     private final TenantSecurityService tenantSecurity;
+    private final AdminScopePolicy policy;
 
     @Transactional(readOnly = true)
     public List<ControlRoomResponse> list(UUID centerId) {
@@ -42,6 +49,21 @@ public class ControlRoomService {
         return rooms.stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Rooms of one region, optionally narrowed to one center of it. A center outside the region
+     * simply matches nothing, so a foreign centerId yields an empty list (no existence oracle).
+     */
+    @Transactional(readOnly = true)
+    public List<ControlRoomResponse> listByRegion(UUID regionId, UUID centerId) {
+        UUID tenantId = TenantContext.get();
+        List<ControlRoom> rooms = tenantId != null
+            ? controlRoomRepo.findAllByTenantIdAndCenterRegionIdAndIsActiveTrue(tenantId, regionId)
+            : controlRoomRepo.findAllByCenterRegionIdAndIsActiveTrue(regionId);
+        return rooms.stream()
+            .filter(cr -> centerId == null || (cr.getCenter() != null && centerId.equals(cr.getCenter().getId())))
+            .map(this::toResponse).toList();
+    }
+
     /** Returns only the CRs with the given IDs (user-specific access list). */
     @Transactional(readOnly = true)
     public List<ControlRoomResponse> listByIds(Collection<UUID> ids) {
@@ -53,8 +75,12 @@ public class ControlRoomService {
             .toList();
     }
 
-    public ControlRoomResponse create(CreateControlRoomRequest req) {
+    /** Scope is the parent center: system_admin any, region_supervisor own region, hospital_supervisor own center. */
+    public ControlRoomResponse create(CreateControlRoomRequest req, User actor) {
         Center center = tenantSecurity.requireCenter(req.getCenterId());
+        policy.assertCenterInScope(actor, center);
+        UUID tenantId = policy.resolveTenantForNewEntity(null, center);
+        assertTypeFree(center.getId(), req.getType(), null);
 
         ControlRoom cr = ControlRoom.builder()
             .center(center)
@@ -64,21 +90,54 @@ public class ControlRoomService {
             .type(req.getType())
             .isActive(true)
             .build();
-        cr.setTenantId(TenantContext.get());
+        cr.setTenantId(tenantId);
         ControlRoom saved = controlRoomRepo.save(cr);
         return toResponse(saved);
     }
 
-    public ControlRoomResponse update(UUID id, UpdateControlRoomRequest req) {
+    /**
+     * Moving a control room needs both the old and the new center in the actor's scope; a hospital
+     * supervisor only has one center, so they can never move a room.
+     */
+    public ControlRoomResponse update(UUID id, UpdateControlRoomRequest req, User actor) {
         ControlRoom cr = tenantSecurity.requireControlRoom(id);
+        policy.assertControlRoomInScope(actor, cr);
+        UUID targetCenterId = cr.getCenter() != null ? cr.getCenter().getId() : null;
         if (req.getCenterId() != null) {
-            cr.setCenter(tenantSecurity.requireCenter(req.getCenterId()));
+            UUID current = cr.getCenter() != null ? cr.getCenter().getId() : null;
+            if (!req.getCenterId().equals(current)) {
+                Center target = tenantSecurity.requireCenter(req.getCenterId());
+                policy.assertCenterInScope(actor, target);
+                if (actor == null || actor.getRole() == UserRole.hospital_supervisor) {
+                    throw new AccessDeniedException("You cannot move a control room to another center");
+                }
+                policy.assertSameTenant(cr, target);
+                targetCenterId = target.getId();
+                assertTypeFree(targetCenterId, req.getType() != null ? req.getType() : cr.getType(), cr.getId());
+                cr.setCenter(target);
+            }
         }
         if (StringUtils.hasText(req.getName()))   cr.setName(req.getName());
         if (StringUtils.hasText(req.getNameAr())) cr.setNameAr(req.getNameAr());
         if (StringUtils.hasText(req.getCode()))   cr.setCode(req.getCode().toUpperCase());
-        if (req.getType() != null)                cr.setType(req.getType());
+        if (req.getType() != null && req.getType() != cr.getType()) {
+            assertTypeFree(targetCenterId, req.getType(), cr.getId());
+            cr.setType(req.getType());
+        }
         return toResponse(controlRoomRepo.save(cr));
+    }
+
+    /**
+     * One room per (center, type), including inactive ones (the DB unique index covers them too).
+     * Reported as a clear 409; the index stays as the backstop for concurrent requests.
+     */
+    private void assertTypeFree(UUID centerId, ControlRoomType type, UUID ignoreRoomId) {
+        if (centerId == null || type == null) return;
+        controlRoomRepo.findByCenterIdAndType(centerId, type)
+            .filter(existing -> !existing.getId().equals(ignoreRoomId))
+            .ifPresent(existing -> {
+                throw new ConflictException("A control room of this type already exists in this center");
+            });
     }
 
     ControlRoomResponse toResponse(ControlRoom cr) {

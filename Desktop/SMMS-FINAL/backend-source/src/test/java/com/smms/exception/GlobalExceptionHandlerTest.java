@@ -112,4 +112,19 @@ class GlobalExceptionHandlerTest {
             handler.notFound(new ResourceNotFoundException("x"));
         assertThat(resp.getBody().timestamp()).isNotNull();
     }
+
+    @Test
+    void dataIntegrityViolationIs409WithoutConstraintDetails() {
+        var r = new GlobalExceptionHandler().integrity(
+            new org.springframework.dao.DataIntegrityViolationException("duplicate key uq_users_username_lower"));
+        org.assertj.core.api.Assertions.assertThat(r.getStatusCode().value()).isEqualTo(409);
+        org.assertj.core.api.Assertions.assertThat(r.getBody().message()).doesNotContain("uq_users");
+    }
+
+    @Test
+    void unsupportedMethodIs405() {
+        var r = new GlobalExceptionHandler().methodNotAllowed(
+            new org.springframework.web.HttpRequestMethodNotSupportedException("POST"));
+        org.assertj.core.api.Assertions.assertThat(r.getStatusCode().value()).isEqualTo(405);
+    }
 }

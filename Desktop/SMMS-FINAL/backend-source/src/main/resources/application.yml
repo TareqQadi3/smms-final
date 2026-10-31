@@ -3,10 +3,66 @@ spring:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   jpa:
     open-in-view: false
+  # Schema migrations. Databases created by the docker entrypoint (scripts/init.sql + V2) have no
+  # flyway_schema_history, so Flyway baselines them at version 2 and applies V3+ only.
+  # clean is disabled: it would drop the whole schema.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: "2"
+    baseline-description: entrypoint init.sql+V2
+    validate-on-migrate: true
+    out-of-order: false
+    clean-disabled: true
+    # Fail fast: a mistyped file name or a missing location must stop startup, never be skipped.
+    validate-migration-naming: true
+    fail-on-missing-locations: true
+  task:
+    scheduling:
+      # several scheduled jobs (SLA, cleanup, program jobs): a single thread would let one block the rest
+      pool:
+        size: 4
+  data:
+    web:
+      pageable:
+        max-page-size: 100
   jackson:
     default-property-inclusion: non_null
     serialization:
       write-dates-as-timestamps: false
+
+# ── Feature program 1 settings (all optional: the defaults below equal the defaults in code) ──
+app:
+  # Preventive-maintenance generator (daily run, Asia/Riyadh)
+  pm:
+    enabled: true
+    cron: "0 20 2 * * *"
+    zone: Asia/Riyadh
+    batch-size: 200
+    overdue-batch-size: 200
+  # Inventory ledger and reports
+  inventory:
+    lock-timeout-ms: 5000
+    zone: Asia/Riyadh
+    max-range-days: 366
+    default-range-days: 30
+    low-stock-notifications: true
+  # Notification delivery worker. Nothing is sent externally unless a channel is enabled below.
+  notifications:
+    scheduler-enabled: true
+    dispatch-ms: 30000
+    enqueue-ms: 30000
+    batch-size: 50
+    max-attempts: 6
+    lease-seconds: 300
+    lookback-hours: 24
+  # SLA escalation of overdue work orders
+  escalation:
+    enabled: true
+    check-ms: 300000
+    notify-priorities: critical,high
+    level2-factor: 0.5
 
 server:
   port: ${SERVER_PORT:9090}

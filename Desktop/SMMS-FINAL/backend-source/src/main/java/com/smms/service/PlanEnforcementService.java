@@ -1,5 +1,6 @@
 package com.smms.service;
 
+import com.smms.cache.SubscriptionCache;
 import com.smms.config.PlanConfig;
 import com.smms.config.PlanConfig.PlanLimits;
 import com.smms.enums.PlanType;
@@ -26,18 +27,27 @@ public class PlanEnforcementService {
     private final UserRepository     userRepo;
     private final WorkOrderRepository workOrderRepo;
     private final CenterRepository   centerRepo;
+    private final SubscriptionCache  subscriptionCache;
 
     /** Call before creating a new user. */
     public void checkUserLimit() {
-        UUID tenantId = TenantContext.get();
-        if (tenantId == null) return; // platform admin bypass
+        checkUserLimit(TenantContext.get(), 1);
+    }
 
-        PlanType    plan   = TenantContext.getPlan();
+    /**
+     * Limit check for the tenant a user is actually being created in (the platform admin has no
+     * tenant context, so the tenant is derived from the new row's parent). Counts {@code additional}
+     * new users. A null tenant (platform-level record) is never limited.
+     */
+    public void checkUserLimit(UUID tenantId, int additional) {
+        if (tenantId == null) return;
+
+        PlanType    plan   = planFor(tenantId);
         PlanLimits  limits = PlanConfig.get(plan);
         if (limits.isUnlimited()) return;
 
         long current = userRepo.countByTenantIdAndDeletedAtIsNull(tenantId);
-        if (current >= limits.maxUsers()) {
+        if (current + additional > limits.maxUsers()) {
             throw new PlanLimitExceededException(
                 "User limit reached (" + limits.maxUsers() + ") for plan " + plan
                 + ". Upgrade your plan to add more users.");
@@ -61,12 +71,34 @@ public class PlanEnforcementService {
         }
     }
 
-    /** Call before creating a new center. */
-    public void checkCenterLimit() {
-        UUID tenantId = TenantContext.get();
+    /**
+     * Ticket limit for an explicit tenant (system-generated tickets run without a request context).
+     * A null tenant is never limited.
+     */
+    public void checkTicketLimit(UUID tenantId) {
         if (tenantId == null) return;
 
-        PlanType   plan   = TenantContext.getPlan();
+        PlanType   plan   = planFor(tenantId);
+        PlanLimits limits = PlanConfig.get(plan);
+        if (limits.isUnlimited()) return;
+
+        long current = workOrderRepo.countByTenantIdAndDeletedAtIsNull(tenantId);
+        if (current >= limits.maxTickets()) {
+            throw new PlanLimitExceededException(
+                "Ticket limit reached (" + limits.maxTickets() + ") for plan " + plan
+                + ". Upgrade your plan to submit more tickets.");
+        }
+    }
+
+    /** Call before creating a new center. */
+    public void checkCenterLimit() {
+        checkCenterLimit(TenantContext.get());
+    }
+
+    public void checkCenterLimit(UUID tenantId) {
+        if (tenantId == null) return;
+
+        PlanType   plan   = planFor(tenantId);
         PlanLimits limits = PlanConfig.get(plan);
         if (limits.isUnlimited()) return;
 
@@ -76,6 +108,15 @@ public class PlanEnforcementService {
                 "Center limit reached (" + limits.maxCenters() + ") for plan " + plan
                 + ". Upgrade your plan to add more centers.");
         }
+    }
+
+    /** Plan of the request's own tenant comes from the context; any other tenant from its subscription. */
+    private PlanType planFor(UUID tenantId) {
+        if (tenantId.equals(TenantContext.get())) return TenantContext.getPlan();
+        if (subscriptionCache == null) return PlanType.FREE;
+        return subscriptionCache.get(tenantId)
+            .map(sub -> sub.getPlanType())
+            .orElse(PlanType.FREE); // same default as JwtAuthFilter for tenants without a subscription
     }
 
     /** Returns current usage metrics for a tenant. */

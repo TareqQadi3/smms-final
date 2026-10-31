@@ -11,6 +11,7 @@ import java.util.Base64;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for JWT generation and validation.
@@ -115,5 +116,148 @@ class JwtServiceTest {
         user.setTenantId(UUID.randomUUID());
         String refresh = jwtService.generateRefreshToken(user);
         assertThat(jwtService.extractTenantId(refresh)).isNull();
+    }
+
+    @Test
+    @DisplayName("access token is an access token and not a refresh token")
+    void accessTokenTyping() {
+        String access = jwtService.generateToken(user);
+        assertThat(jwtService.isAccessToken(access)).isTrue();
+        assertThat(jwtService.isRefreshToken(access)).isFalse();
+    }
+
+    @Test
+    @DisplayName("refresh token is rejected as an access token (SEC-003)")
+    void refreshTokenIsNotAccessToken() {
+        String refresh = jwtService.generateRefreshToken(user);
+        assertThat(jwtService.isAccessToken(refresh)).isFalse();
+        assertThat(jwtService.isRefreshToken(refresh)).isTrue();
+    }
+
+    @Test
+    @DisplayName("legacy refresh token (no typ, no role claim) is not an access token")
+    void legacyRefreshTokenWithoutRoleIsNotAccessToken() {
+        String legacy = io.jsonwebtoken.Jwts.builder()
+            .subject("tech1")
+            .issuedAt(new java.util.Date())
+            .expiration(new java.util.Date(System.currentTimeMillis() + 60_000))
+            .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                io.jsonwebtoken.io.Decoders.BASE64.decode(TEST_SECRET)))
+            .compact();
+        assertThat(jwtService.isAccessToken(legacy)).isFalse();
+        assertThat(jwtService.isRefreshToken(legacy)).isTrue();
+    }
+
+    // ── Secret guard (SEC-011). Secrets are generated at runtime, never literal values. ──
+
+    private static String randomSecret(int bytes) {
+        byte[] b = new byte[bytes];
+        new java.security.SecureRandom().nextBytes(b);
+        return Base64.getEncoder().encodeToString(b);
+    }
+
+    private JwtService withSecret(String secret, String... profiles) {
+        JwtService svc = new JwtService();
+        ReflectionTestUtils.setField(svc, "secret", secret);
+        ReflectionTestUtils.setField(svc, "environment",
+            new org.springframework.mock.env.MockEnvironment() {{ setActiveProfiles(profiles); }});
+        return svc;
+    }
+
+    @Test
+    void strongRandomSecretIsAcceptedInProd() {
+        withSecret(randomSecret(48), "prod").validateSecret();
+    }
+
+    @Test
+    void shortSecretIsRefusedInProdAndOnlyWarnedInDev() {
+        String shortSecret = randomSecret(16);
+        assertThatThrownBy(() -> withSecret(shortSecret, "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("JWT_SECRET").hasMessageNotContaining(shortSecret);
+        withSecret(shortSecret, "dev").validateSecret();
+    }
+
+    @Test
+    void invalidBase64IsRefusedUnderEveryProfile() {
+        assertThatThrownBy(() -> withSecret("not base64 !!", "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class).hasMessageContaining("Base64");
+        assertThatThrownBy(() -> withSecret("not base64 !!", "dev").validateSecret())
+            .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> withSecret(null, "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void placeholderTextIsRefusedAndItsHashIsListed() {
+        String placeholder = "__GENERATED_BY_SETUP__";
+        assertThat(JwtService.KNOWN_WEAK_SHA256).contains(JwtService.sha256Hex(placeholder));
+        assertThatThrownBy(() -> withSecret(placeholder, "prod").validateSecret())
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void knownFingerprintIsRefusedInProdWithoutEchoingTheValue() {
+        // A generated value stands in for a leaked one: its hash is registered as known-weak
+        String known = randomSecret(64);
+        JwtService svc = withSecret(known, "prod");
+        ReflectionTestUtils.setField(svc, "knownWeakHashes", java.util.Set.of(JwtService.sha256Hex(known)));
+        assertThatThrownBy(svc::validateSecret)
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("JWT_SECRET").hasMessageNotContaining(known);
+        // dev only warns
+        JwtService dev = withSecret(known, "dev");
+        ReflectionTestUtils.setField(dev, "knownWeakHashes", java.util.Set.of(JwtService.sha256Hex(known)));
+        dev.validateSecret();
+    }
+
+    @Test
+    void committedFingerprintsAreWellFormedHashes() {
+        assertThat(JwtService.KNOWN_WEAK_SHA256).hasSize(4).allMatch(h -> h.matches("[0-9a-f]{64}"));
+    }
+
+    @Test
+    void sha256HexMatchesTheReferenceVector() {
+        assertThat(JwtService.sha256Hex("abc"))
+            .isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    }
+
+    // ── P4: sessions ───────────────────────────────────────────
+
+    @Test
+    void sessionBoundAccessTokenCarriesSid() {
+        UUID sid = UUID.randomUUID();
+        String t = jwtService.generateToken(user, sid);
+        assertThat(jwtService.extractSessionId(t)).isEqualTo(sid);
+        assertThat(jwtService.isAccessToken(t)).isTrue();
+    }
+
+    @Test
+    void legacyAccessTokenHasNoSid() {
+        assertThat(jwtService.extractSessionId(jwtService.generateToken(user))).isNull();
+    }
+
+    @Test
+    void sessionRefreshTokenCarriesSidJtiAndAbsoluteExpiry() {
+        UUID sid = UUID.randomUUID();
+        java.time.Instant end = java.time.Instant.now().plusSeconds(1000);
+        String t = jwtService.generateRefreshToken(user, sid, "jti-123", end);
+        assertThat(jwtService.isRefreshToken(t)).isTrue();
+        assertThat(jwtService.isAccessToken(t)).isFalse();
+        assertThat(jwtService.extractSessionId(t)).isEqualTo(sid);
+        assertThat(jwtService.extractJti(t)).isEqualTo("jti-123");
+        assertThat(jwtService.extractExpiration(t).getEpochSecond()).isEqualTo(end.getEpochSecond());
+        assertThat(jwtService.extractIssuedAt(t)).isNotNull();
+    }
+
+    @Test
+    void parseAllowExpiredReturnsClaimsOfExpiredButSignedTokensOnly() {
+        UUID sid = UUID.randomUUID();
+        String expired = jwtService.generateRefreshToken(user, sid, "j", java.time.Instant.now().minusSeconds(5));
+        assertThatThrownBy(() -> jwtService.extractSessionId(expired)).isInstanceOf(io.jsonwebtoken.JwtException.class);
+        assertThat(jwtService.parseAllowExpired(expired)).isPresent();
+        assertThat(jwtService.parseAllowExpired(expired).get().get("sid")).isEqualTo(sid.toString());
+        assertThat(jwtService.parseAllowExpired("garbage")).isEmpty();
+        assertThat(jwtService.parseAllowExpired(expired.substring(0, expired.length() - 3) + "abc")).isEmpty();
     }
 }

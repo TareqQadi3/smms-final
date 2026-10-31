@@ -1,0 +1,17 @@
+# Secret scanning config (gitleaks). CI: .github/workflows/secret-scan.yml
+title = "SMMS gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documentation examples and the generated-secret placeholder"
+paths = [
+  '''^\.claude/skills/''',
+]
+regexes = [
+  '''__GENERATED_BY_SETUP__''',
+  '''CHANGE_ME''',
+  '''key-from-before-crash-1''',   # fake idempotency key in queue.test.ts
+  '''key-12345678''',             # fake idempotency key in IdempotencyServiceTest
+]

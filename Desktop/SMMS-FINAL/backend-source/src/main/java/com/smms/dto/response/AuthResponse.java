@@ -20,4 +20,6 @@ public class AuthResponse {
     String centerNameAr;
     UUID tenantId;
     String tenantName;
+    /** True when the account still has a default or admin-set password: show the change-password screen. */
+    boolean passwordChangeRequired;
 }

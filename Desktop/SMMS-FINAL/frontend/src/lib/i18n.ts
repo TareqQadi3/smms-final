@@ -195,7 +195,7 @@ export const t = {
 } as const;
 
 export type Lang = 'ar' | 'en';
-export type Translations = typeof t.ar;
+export type Translations = Record<keyof typeof t.ar, string>;
 
 export function useT(lang: Lang): Translations {
   return t[lang];
@@ -234,3 +234,31 @@ export const roleLabels: Record<string, { ar: string; en: string }> = {
   department: { ar: 'قسم', en: 'Department' },
   other: { ar: 'أخرى', en: 'Other' },
 };
+
+// Badge translations (UI-005): status/priority values from the API are lowercase codes.
+export const statusLabels: Record<string, { ar: string; en: string }> = {
+  new: { ar: t.ar.statusNew, en: t.en.statusNew },
+  under_review: { ar: t.ar.statusUnderReview, en: t.en.statusUnderReview },
+  assigned: { ar: t.ar.statusAssigned, en: t.en.statusAssigned },
+  in_progress: { ar: t.ar.statusInProgress, en: t.en.statusInProgress },
+  waiting_materials: { ar: t.ar.statusWaitingMaterials, en: t.en.statusWaitingMaterials },
+  waiting_approval: { ar: t.ar.statusWaitingApproval, en: t.en.statusWaitingApproval },
+  completed: { ar: t.ar.statusCompleted, en: t.en.statusCompleted },
+  closed: { ar: t.ar.statusClosed, en: t.en.statusClosed },
+  cancelled: { ar: t.ar.statusCancelled, en: t.en.statusCancelled },
+};
+
+export const priorityLabels: Record<string, { ar: string; en: string }> = {
+  critical: { ar: t.ar.priorityCritical, en: t.en.priorityCritical },
+  high: { ar: t.ar.priorityHigh, en: t.en.priorityHigh },
+  medium: { ar: t.ar.priorityMedium, en: t.en.priorityMedium },
+  low: { ar: t.ar.priorityLow, en: t.en.priorityLow },
+};
+
+export function tStatus(status: string, lang: Lang): string {
+  return statusLabels[status]?.[lang] ?? status;
+}
+
+export function tPriority(priority: string, lang: Lang): string {
+  return priorityLabels[priority]?.[lang] ?? priority;
+}

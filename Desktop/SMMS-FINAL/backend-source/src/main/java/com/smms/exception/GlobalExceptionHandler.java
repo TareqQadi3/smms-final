@@ -33,6 +33,44 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
+    @ExceptionHandler(ConflictException.class)
+    public ResponseEntity<ErrorBody> conflict(ConflictException e) {
+        log.warn("Conflict: {}", e.getMessage());
+        return error(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    /** Unique/FK violations that slipped past service checks: 409 without leaking constraint names. */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorBody> integrity(org.springframework.dao.DataIntegrityViolationException e) {
+        log.warn("Data integrity violation: {}", e.getClass().getSimpleName());
+        return error(HttpStatus.CONFLICT, "The request conflicts with existing data");
+    }
+
+    // ── Concurrency: lost updates and lock waits are retryable conflicts, never a 500 ──
+
+    /** @Version mismatch on a work order (or any versioned row): someone else changed it first. */
+    @ExceptionHandler({org.springframework.dao.OptimisticLockingFailureException.class,
+                       jakarta.persistence.OptimisticLockException.class})
+    public ResponseEntity<ErrorBody> optimisticLock(Exception e) {
+        log.warn("Optimistic lock failure: {}", e.getClass().getSimpleName());
+        return error(HttpStatus.CONFLICT, "The record was modified concurrently, reload and try again");
+    }
+
+    /** Lock wait timeout, deadlock victim, cannot acquire lock: safe to retry (same Idempotency-Key). */
+    @ExceptionHandler({org.springframework.dao.PessimisticLockingFailureException.class,
+                       jakarta.persistence.PessimisticLockException.class,
+                       jakarta.persistence.LockTimeoutException.class})
+    public ResponseEntity<ErrorBody> lockBusy(Exception e) {
+        log.warn("Lock contention: {}", e.getClass().getSimpleName());
+        return error(HttpStatus.CONFLICT, "The system is busy, retry in a moment");
+    }
+
+    /** Wrong HTTP verb on an existing path is a client error, not a server fault. */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorBody> methodNotAllowed(org.springframework.web.HttpRequestMethodNotSupportedException e) {
+        return error(HttpStatus.METHOD_NOT_ALLOWED, "Method not allowed");
+    }
+
     @ExceptionHandler(WorkflowException.class)
     public ResponseEntity<ErrorBody> workflow(WorkflowException e) {
         log.warn("Workflow: {}", e.getMessage());
@@ -43,6 +81,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorBody> auth(AuthException e) {
         log.warn("Auth: {}", e.getMessage());
         return error(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<ErrorBody> accountLocked(AccountLockedException e) {
+        log.warn("Account locked: {}", e.getMessage());
+        return error(HttpStatus.TOO_MANY_REQUESTS, e.getMessage());
     }
 
     @ExceptionHandler(TicketLockedException.class)

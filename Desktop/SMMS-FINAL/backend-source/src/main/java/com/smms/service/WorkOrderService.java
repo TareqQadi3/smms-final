@@ -2,8 +2,9 @@ package com.smms.service;
 
 import com.smms.dto.request.CreateWorkOrderRequest;
 import com.smms.util.InputSanitizer;
-import com.smms.util.TenantContext;
 import com.smms.dto.request.TransitionRequest;
+import com.smms.dto.response.AssignableTechnicianResponse;
+import com.smms.dto.response.DuplicateCandidateResponse;
 import com.smms.dto.response.TicketHistoryResponse;
 import com.smms.dto.response.WorkOrderResponse;
 import com.smms.entity.*;
@@ -12,6 +13,18 @@ import com.smms.exception.*;
 import com.smms.mapper.WorkOrderMapper;
 import com.smms.repository.*;
 import com.smms.security.TenantSecurityService;
+import com.smms.security.WorkOrderAccessPolicy;
+import com.smms.security.WorkOrderScope;
+import com.smms.workflow.EscalationRepository;
+import com.smms.workflow.GeneratedWorkOrderSpec;
+import com.smms.workflow.InfoRequest;
+import com.smms.workflow.InfoRequestRepository;
+import com.smms.workflow.SlaPause;
+import com.smms.workflow.WorkOrderHistoryWriter;
+import com.smms.workflow.WorkflowDtos.InfoRequestResponse;
+import com.smms.workflow.WorkflowDtos.UserRef;
+import org.springframework.dao.DataIntegrityViolationException;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.*;
@@ -20,7 +33,9 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -28,16 +43,30 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@lombok.extern.slf4j.Slf4j
 public class WorkOrderService {
 
     private final WorkOrderRepository workOrderRepo;
     private final TicketHistoryRepository historyRepo;
-    private final com.smms.repository.UserControlRoomAccessRepository crAccessRepo;
     private final WorkflowEngine workflowEngine;
     private final NotificationService notificationService;
     private final WorkOrderMapper mapper;
     private final PlanEnforcementService planEnforcement;
     private final TenantSecurityService tenantSecurity;
+    private final WorkOrderAccessPolicy accessPolicy;
+    private final EntityManager entityManager;
+    private final UserRepository userRepo;
+    private final WorkOrderHistoryWriter historyWriter;
+    private final ControlRoomRepository controlRoomRepo;
+    private final AssetRepository assetRepo;
+    private final DepartmentRepository departmentRepo;
+    private final InfoRequestRepository infoRequestRepo;
+    private final EscalationRepository escalationRepo;
+
+    /** Test hook: time source of the SLA pause arithmetic. */
+    private Clock clock = Clock.systemUTC();
+
+    public void setClock(Clock clock) { this.clock = clock; }
 
     // ── Create ────────────────────────────────────────────
 
@@ -46,22 +75,8 @@ public class WorkOrderService {
 
         ControlRoom cr = tenantSecurity.requireControlRoom(req.getControlRoomId());
 
-        // ISSUE 2 FIX: for end-user roles, validate they have explicit CR access
-        boolean isManagerRole = actor.getRole() == UserRole.system_admin
-            || actor.getRole() == UserRole.maintenance_manager
-            || actor.getRole() == UserRole.hospital_supervisor
-            || actor.getRole() == UserRole.region_supervisor
-            || actor.getRole() == UserRole.electrical_manager
-            || actor.getRole() == UserRole.control_room;
-
-        if (!isManagerRole) {
-            boolean hasAccess = crAccessRepo.existsByUserIdAndControlRoomId(
-                actor.getId(), cr.getId());
-            if (!hasAccess) {
-                throw new AccessDeniedException(
-                    "You do not have access to this control room");
-            }
-        }
+        // Role/center/control-room scope check (shared policy, 403 when out of scope)
+        accessPolicy.assertCanCreateIn(cr, actor);
 
         validateSubmitterRole(actor.getRole(), cr.getType());
 
@@ -75,15 +90,116 @@ public class WorkOrderService {
             .priority(req.getPriority())
             .requestedBy(actor)
             .createdByRole(actor.getRole())
+            .asset(resolveAsset(req.getAssetId(), cr))
+            .department(resolveRequesterDepartment(actor, cr))
             .status(TicketStatus.NEW)
             .currentStage("new")
             .build();
 
-        wo.setTenantId(TenantContext.get());
+        // The control room is already tenant-checked; inherit its tenant (also correct for platform-admin callers)
+        wo.setTenantId(cr.getTenantId());
         WorkOrder saved = workOrderRepo.save(wo);
+        // ticket_number and sla_deadline are filled by DB triggers on INSERT; flush the insert and
+        // reload the row so the response carries those values instead of nulls.
+        workOrderRepo.flush();
+        entityManager.refresh(saved);
         recordHistory(saved, null, TicketStatus.NEW, actor, "Ticket created");
         notificationService.notifyControlRoom(saved);
-        return mapper.toResponse(saved);
+        WorkOrderResponse response = respond(saved);
+        // Non-blocking hint; filtered by the creator's own visibility so it can never leak other tickets
+        response.setPossibleDuplicates(findDuplicates(saved, actor));
+        return response;
+    }
+
+    /**
+     * Optional asset of a new request: it must exist in the control room's tenant AND center
+     * (anything else is the same 404, no oracle).
+     */
+    private Asset resolveAsset(UUID assetId, ControlRoom cr) {
+        if (assetId == null) return null;
+        Asset asset = assetRepo.findByIdAndTenantIdAndDeletedAtIsNull(assetId, cr.getTenantId())
+            .orElseThrow(() -> new ResourceNotFoundException("Asset not found"));
+        if (asset.getCenter() == null || cr.getCenter() == null
+                || !asset.getCenter().getId().equals(cr.getCenter().getId())) {
+            throw new ResourceNotFoundException("Asset not found");
+        }
+        if (asset.isDecommissioned()) throw new WorkflowException("Asset is decommissioned and cannot be linked to a ticket");
+        return asset;
+    }
+
+    /**
+     * The department of a ticket is derived from the requester (department users only), never from
+     * the client: the linked department must belong to the ticket's tenant and center.
+     */
+    private Department resolveRequesterDepartment(User actor, ControlRoom cr) {
+        if (actor.getRole() != UserRole.department || actor.getDepartment() == null) return null;
+        return departmentRepo.findByIdAndTenantIdAndDeletedAtIsNull(actor.getDepartment().getId(), cr.getTenantId())
+            .filter(d -> d.getCenter() != null && cr.getCenter() != null
+                && d.getCenter().getId().equals(cr.getCenter().getId()))
+            .orElse(null);
+    }
+
+    /** Response with the computed escalation level. */
+    private WorkOrderResponse respond(WorkOrder wo) {
+        WorkOrderResponse r = mapper.toResponse(wo);
+        if (r != null && wo.getId() != null) {
+            Integer lvl = escalationRepo.maxLevel(wo.getId());
+            r.setEscalationLevel(lvl == null ? 0 : lvl);
+        }
+        return r;
+    }
+
+    /**
+     * System-generated work order (preventive maintenance) on behalf of {@code spec.requester()}.
+     * Joins the caller's transaction; runs without a TenantContext (schedulers), so every lookup
+     * names the tenant explicitly. The control room, the optional asset and the requester must all
+     * belong to {@code spec.tenantId()} and the requester must be active; the tenant's ticket plan
+     * limit applies. The row starts as a normal {@code new} ticket in the normal workflow.
+     */
+    public WorkOrder createGenerated(GeneratedWorkOrderSpec spec) {
+        UUID tenantId = spec.tenantId();
+        if (tenantId == null) throw new IllegalArgumentException("tenantId is required");
+        if (spec.subType() == null) throw new IllegalArgumentException("subType is required");
+        User requester = spec.requester();
+        if (requester == null || !tenantId.equals(requester.getTenantId())) {
+            throw new IllegalArgumentException("Requester does not belong to the tenant");
+        }
+        if (!requester.isActive() || requester.getDeletedAt() != null) {
+            throw new WorkflowException("Requester is inactive");
+        }
+        ControlRoom cr = controlRoomRepo.findByIdAndTenantIdAndDeletedAtIsNull(spec.controlRoomId(), tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException("Control room not found"));
+        if (!cr.isActive()) throw new WorkflowException("Control room is inactive");
+        Asset asset = null;
+        if (spec.assetId() != null) {
+            asset = assetRepo.findByIdAndTenantIdAndDeletedAtIsNull(spec.assetId(), tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Asset not found"));
+        }
+        planEnforcement.checkTicketLimit(tenantId);
+
+        WorkOrder wo = WorkOrder.builder()
+            .center(cr.getCenter())
+            .controlRoom(cr)
+            .subType(spec.subType())
+            .title(InputSanitizer.clean(spec.title(), 500))
+            .description(InputSanitizer.clean(spec.description()))
+            .locationDetail(InputSanitizer.clean(spec.locationDetail(), 300))
+            .priority(spec.priority() != null ? spec.priority() : TicketPriority.medium)
+            .requestedBy(requester)
+            .createdByRole(requester.getRole())
+            .asset(asset)
+            .status(TicketStatus.NEW)
+            .currentStage("new")
+            .build();
+        wo.setTenantId(tenantId);
+        WorkOrder saved = workOrderRepo.save(wo);
+        // ticket_number and sla_deadline come from DB triggers on INSERT (see create())
+        workOrderRepo.flush();
+        entityManager.refresh(saved);
+        historyWriter.record(saved, null, TicketStatus.NEW, requester,
+            spec.historyNote() != null ? spec.historyNote() : "Ticket created");
+        notificationService.notifyControlRoom(saved);
+        return saved;
     }
 
     // ── Transition ────────────────────────────────────────
@@ -98,6 +214,7 @@ public class WorkOrderService {
         TicketStatus from = wo.getStatus();
         TicketStatus to   = req.getTargetStatus();
 
+        rejectDedicatedEndpointTransition(from, to, actor.getRole());
         workflowEngine.validate(from, to, actor.getRole());
 
         TicketStatus previous = wo.getStatus();
@@ -105,12 +222,202 @@ public class WorkOrderService {
         wo.setCurrentStage(workflowEngine.resolveStage(to));
 
         applyTransitionSideEffects(wo, req, actor, to);
+        if (to == TicketStatus.CANCELLED && wo.isSlaPaused()) {
+            closeInfoRequestPause(wo, false, null, clock.instant());
+        }
 
         workOrderRepo.save(wo);
         recordHistory(wo, previous, to, actor, req.getNote());
         notificationService.notifyTransition(wo, actor);
 
-        return mapper.toResponse(wo);
+        return respond(wo);
+    }
+
+    /**
+     * Guards the generic /transition path against moves that have dedicated endpoints which
+     * record required data (assignee, approval decision, reopen counter).
+     * Conditions (reject when any holds):
+     *  - to == ASSIGNED: needs a technician, only /assign sets one (else the ticket is orphaned).
+     *  - from == WAITING_APPROVAL: approval decisions go through /approval (records approvedBy and
+     *    decision). system_admin is exempt because the UI offers admin this move only via /transition
+     *    and /approval is restricted to operating_company_manager.
+     *  - from == COMPLETED and to == IN_PROGRESS: reopen goes through /reopen (counter + reason).
+     */
+    static void rejectDedicatedEndpointTransition(TicketStatus from, TicketStatus to, UserRole role) {
+        if (to == TicketStatus.ASSIGNED) {
+            throw new WorkflowException(
+                "Use POST /api/work-orders/{id}/assign to assign a technician; generic transition to assigned is not allowed");
+        }
+        if (from == TicketStatus.WAITING_APPROVAL && role != UserRole.system_admin) {
+            throw new WorkflowException(
+                "Use POST /api/work-orders/{id}/approval to decide on approval requests");
+        }
+        if (from == TicketStatus.COMPLETED && to == TicketStatus.IN_PROGRESS) {
+            throw new WorkflowException(
+                "Use POST /api/work-orders/{id}/reopen to reopen a completed ticket");
+        }
+    }
+
+    // ── Return for information ────────────────────────────
+
+    /** Stage label (not a status: no PG enum change) marking an under_review ticket as returned to the requester. */
+    static final String STAGE_INFO_REQUESTED = "info_requested";
+
+    private static final int DUPLICATE_MAX = 5;
+    private static final int DUPLICATE_SCAN = 200;
+    private static final long DUPLICATE_WINDOW_DAYS = 7;
+
+    /**
+     * control_room / maintenance_manager ask the requester for more detail. Allowed only while the
+     * ticket is under_review and not already waiting; status stays under_review, stage becomes
+     * info_requested. One history row (under_review to under_review) and one notification to the requester.
+     * The SLA clock is paused (sla_paused_at) and an info-request row records the question.
+     */
+    public WorkOrderResponse requestInfo(UUID id, String note, User actor) {
+        WorkOrder wo = getActiveWorkOrder(id, actor);
+        assertNotLockedByOther(wo, actor);
+        if (wo.getStatus() != TicketStatus.UNDER_REVIEW) {
+            throw new WorkflowException("Information can only be requested while the ticket is under_review");
+        }
+        if (STAGE_INFO_REQUESTED.equals(wo.getCurrentStage())) {
+            throw new WorkflowException("Information has already been requested for this ticket");
+        }
+        if (wo.isSlaPaused() || infoRequestRepo.findOpen(wo.getId()).isPresent()) {
+            throw new WorkflowException("Information has already been requested for this ticket");
+        }
+        Instant now = clock.instant();
+        wo.setCurrentStage(STAGE_INFO_REQUESTED);
+        // the SLA clock stops until the requester answers (or the ticket is cancelled)
+        SlaPause.pause(wo, now);
+        workOrderRepo.save(wo);
+        if (wo.getTenantId() == null) {
+            // legacy ticket without a tenant: no row can be stored (tenant_id is NOT NULL), the stage and pause still apply
+            log.warn("Info request on ticket {} without a tenant: no info-request row stored", wo.getId());
+        } else {
+            try {
+                infoRequestRepo.saveAndFlush(InfoRequest.builder()
+                    .tenantId(wo.getTenantId()).workOrderId(wo.getId()).requestedBy(actor)
+                    .question(InputSanitizer.clean(note, 2000)).requestedAt(now).build());
+            } catch (DataIntegrityViolationException e) {
+                // the partial unique index allows one open request per ticket, even under a race
+                throw new ConflictException("Information has already been requested for this ticket");
+            }
+        }
+        recordHistory(wo, TicketStatus.UNDER_REVIEW, TicketStatus.UNDER_REVIEW, actor,
+            "Information requested: " + note);
+        if (wo.getRequestedBy() != null && !wo.getRequestedBy().getId().equals(actor.getId())) {
+            notificationService.notifyUser(wo.getRequestedBy(), wo, "INFO_REQUESTED",
+                "Information requested: " + wo.getTicketNumber());
+        }
+        return respond(wo);
+    }
+
+    /**
+     * Only the original requester may answer, and only while the stage is info_requested. The stage
+     * returns to under_review, one history row is written and the ticket's control-room operators
+     * are notified.
+     */
+    public WorkOrderResponse provideInfo(UUID id, String note, User actor) {
+        WorkOrder wo = getActiveWorkOrder(id, actor);
+        if (wo.getRequestedBy() == null || !wo.getRequestedBy().getId().equals(actor.getId())) {
+            throw new AccessDeniedException("Only the requester can provide the requested information");
+        }
+        assertNotLockedByOther(wo, actor);
+        if (wo.getStatus() != TicketStatus.UNDER_REVIEW
+                || !STAGE_INFO_REQUESTED.equals(wo.getCurrentStage())) {
+            throw new WorkflowException("No information request is pending for this ticket");
+        }
+        wo.setCurrentStage(workflowEngine.resolveStage(TicketStatus.UNDER_REVIEW));
+        // resume the SLA clock: deadline moves by exactly the paused time
+        closeInfoRequestPause(wo, true, InputSanitizer.clean(note, 2000), clock.instant(), actor);
+        workOrderRepo.save(wo);
+        recordHistory(wo, TicketStatus.UNDER_REVIEW, TicketStatus.UNDER_REVIEW, actor,
+            "Information provided: " + note);
+        notificationService.notifyInfoProvided(wo);
+        return respond(wo);
+    }
+
+    private void closeInfoRequestPause(WorkOrder wo, boolean answered, String answer, Instant now) {
+        closeInfoRequestPause(wo, answered, answer, now, null);
+    }
+
+    /**
+     * Closes the open info request (answered or cancelled) and the SLA pause together. A legacy open
+     * request without a row (or without a pause) is tolerated: only what exists is closed.
+     */
+    private void closeInfoRequestPause(WorkOrder wo, boolean answered, String answer, Instant now, User answerer) {
+        long paused = SlaPause.resume(wo, now);
+        infoRequestRepo.findOpen(wo.getId()).ifPresent(r -> {
+            if (answered) {
+                r.setAnswer(answer);
+                r.setAnsweredBy(answerer);
+                r.setAnsweredAt(now.isBefore(r.getRequestedAt()) ? r.getRequestedAt() : now);
+            } else {
+                r.setCancelledAt(now.isBefore(r.getRequestedAt()) ? r.getRequestedAt() : now);
+            }
+            r.setPausedSeconds(paused);
+            infoRequestRepo.save(r);
+        });
+    }
+
+    @Transactional(readOnly = true)
+    public List<InfoRequestResponse> infoRequests(UUID id, User actor) {
+        getActiveWorkOrder(id, actor);
+        return infoRequestRepo.findAllForWorkOrder(id).stream()
+            .map(r -> new InfoRequestResponse(r.getId(), r.getQuestion(), UserRef.of(r.getRequestedBy()),
+                r.getRequestedAt(), r.getAnswer(), UserRef.of(r.getAnsweredBy()), r.getAnsweredAt(),
+                r.getCancelledAt(), r.getPausedSeconds()))
+            .toList();
+    }
+
+    private void assertNotLockedByOther(WorkOrder wo, User actor) {
+        if (wo.isLocked() && !wo.getLockedBy().getId().equals(actor.getId())) {
+            throw new TicketLockedException("Ticket is locked by another user");
+        }
+    }
+
+    // ── Duplicate candidates (read-only, non-blocking) ────
+
+    @Transactional(readOnly = true)
+    public List<DuplicateCandidateResponse> possibleDuplicates(UUID id, User actor) {
+        return findDuplicates(getActiveWorkOrder(id, actor), actor);
+    }
+
+    /**
+     * Candidates share control room and sub type with the base ticket, are still open (not closed or
+     * cancelled), were created in the last 7 days, and have either the same requester or an equal
+     * normalized location (lowercase, trimmed, collapsed whitespace; blank never matches).
+     * Visibility comes from WorkOrderAccessPolicy for the CALLER, so an invisible ticket is never
+     * returned and never counted. At most 5 are returned, newest first.
+     */
+    private List<DuplicateCandidateResponse> findDuplicates(WorkOrder base, User actor) {
+        if (base.getControlRoom() == null) return List.of();
+        Instant cutoff = Instant.now().minus(DUPLICATE_WINDOW_DAYS, ChronoUnit.DAYS);
+        Specification<WorkOrder> spec = Specification.where(accessPolicy.readableBy(actor))
+            .and((root, q, cb) -> cb.and(
+                cb.equal(root.get("controlRoom").get("id"), base.getControlRoom().getId()),
+                cb.equal(root.get("subType"), base.getSubType()),
+                cb.notEqual(root.get("status"), TicketStatus.CLOSED),
+                cb.notEqual(root.get("status"), TicketStatus.CANCELLED),
+                cb.greaterThanOrEqualTo(root.get("createdAt"), cutoff),
+                cb.notEqual(root.get("id"), base.getId())));
+        String baseLocation = normalizeLocation(base.getLocationDetail());
+        UUID baseRequester = base.getRequestedBy() != null ? base.getRequestedBy().getId() : null;
+        return workOrderRepo.findAll(spec,
+                PageRequest.of(0, DUPLICATE_SCAN, Sort.by(Sort.Direction.DESC, "createdAt")))
+            .stream()
+            .filter(c -> (baseRequester != null && c.getRequestedBy() != null
+                    && baseRequester.equals(c.getRequestedBy().getId()))
+                || (!baseLocation.isEmpty() && baseLocation.equals(normalizeLocation(c.getLocationDetail()))))
+            .limit(DUPLICATE_MAX)
+            .map(c -> DuplicateCandidateResponse.builder()
+                .id(c.getId()).ticketNumber(c.getTicketNumber())
+                .status(c.getStatus()).createdAt(c.getCreatedAt()).build())
+            .toList();
+    }
+
+    static String normalizeLocation(String s) {
+        return s == null ? "" : s.trim().toLowerCase().replaceAll("\\s+", " ");
     }
 
     // ── Assign technician ─────────────────────────────────
@@ -120,7 +427,15 @@ public class WorkOrderService {
         if (wo.getStatus() != TicketStatus.UNDER_REVIEW) {
             throw new WorkflowException("Can only assign from under_review status");
         }
+        if (STAGE_INFO_REQUESTED.equals(wo.getCurrentStage())) {
+            throw new WorkflowException("Ticket is waiting for information from the requester; it cannot be assigned yet");
+        }
         User tech = tenantSecurity.requireUser(technicianId, UserRole.technician);
+        // A technician can only be assigned inside the ticket's own center; otherwise behave as unknown
+        if (!tech.isActive() || tech.getCenter() == null || wo.getCenter() == null
+                || !tech.getCenter().getId().equals(wo.getCenter().getId())) {
+            throw new ResourceNotFoundException("User not found");
+        }
 
         TicketStatus prev = wo.getStatus();
         wo.setAssignedTo(tech);
@@ -130,7 +445,25 @@ public class WorkOrderService {
         workOrderRepo.save(wo);
         recordHistory(wo, prev, TicketStatus.ASSIGNED, actor, note);
         notificationService.notifyUser(tech, wo, "ASSIGNED", "Ticket assigned to you");
-        return mapper.toResponse(wo);
+        return respond(wo);
+    }
+
+    /**
+     * Technicians the actor may pick for this ticket: active technicians of the ticket's own center
+     * and tenant. Visibility of the ticket itself is decided by WorkOrderAccessPolicy (404 otherwise),
+     * so this does not need access to the general user list.
+     */
+    @Transactional(readOnly = true)
+    public List<AssignableTechnicianResponse> assignableTechnicians(UUID id, User actor) {
+        WorkOrder wo = getActiveWorkOrder(id, actor);
+        if (wo.getCenter() == null) return List.of();
+        return userRepo.findAllByCenterIdAndRoleAndDeletedAtIsNull(wo.getCenter().getId(), UserRole.technician)
+            .stream()
+            .filter(User::isActive)
+            .filter(t -> java.util.Objects.equals(t.getTenantId(), wo.getTenantId()))
+            .map(t -> AssignableTechnicianResponse.builder()
+                .id(t.getId()).fullName(t.getFullName()).fullNameAr(t.getFullNameAr()).build())
+            .toList();
     }
 
     // ── Warehouse decision ────────────────────────────────
@@ -148,6 +481,7 @@ public class WorkOrderService {
             wo.setStatus(TicketStatus.IN_PROGRESS);
             wo.setCurrentStage("in_progress");
             recordHistory(wo, prev, TicketStatus.IN_PROGRESS, actor, "Materials provided");
+            notificationService.notifyMaterialsProvided(wo, actor);
         } else {
             wo.setNeedsMaterials(true);
             wo.setMaterialRequiredAt(Instant.now());
@@ -157,7 +491,7 @@ public class WorkOrderService {
             notificationService.notifyApprover(wo);
         }
         workOrderRepo.save(wo);
-        return mapper.toResponse(wo);
+        return respond(wo);
     }
 
     // ── Approval decision ─────────────────────────────────
@@ -176,6 +510,7 @@ public class WorkOrderService {
             wo.setStatus(TicketStatus.IN_PROGRESS);
             wo.setCurrentStage("in_progress");
             recordHistory(wo, prev, TicketStatus.IN_PROGRESS, actor, note);
+            notificationService.notifyApprovalGranted(wo, actor);
         } else {
             wo.setStatus(TicketStatus.WAITING_MATERIALS);
             wo.setCurrentStage("waiting_materials");
@@ -184,7 +519,7 @@ public class WorkOrderService {
             notificationService.notifyUser(wo.getAssignedTo(), wo, "REJECTED", "Approval rejected");
         }
         workOrderRepo.save(wo);
-        return mapper.toResponse(wo);
+        return respond(wo);
     }
 
     // ── Close / Reopen ────────────────────────────────────
@@ -198,7 +533,8 @@ public class WorkOrderService {
         wo.setClosedAt(Instant.now());
         workOrderRepo.save(wo);
         recordHistory(wo, prev, TicketStatus.CLOSED, actor, note);
-        return mapper.toResponse(wo);
+        notificationService.notifyClosed(wo, actor);
+        return respond(wo);
     }
 
     public WorkOrderResponse reopen(UUID id, String note, User actor) {
@@ -211,23 +547,45 @@ public class WorkOrderService {
         wo.setCurrentStage("in_progress");
         wo.setReopenedCount(wo.getReopenedCount() + 1);
         wo.setCompletedDate(null);
+        // a new round of work needs a new verdict from the requester
+        wo.setRequesterConfirmation(null);
+        wo.setRequesterConfirmedAt(null);
         workOrderRepo.save(wo);
         recordHistory(wo, prev, TicketStatus.IN_PROGRESS, actor, "Reopened: " + note);
-        return mapper.toResponse(wo);
+        notificationService.notifyReopened(wo, actor);
+        return respond(wo);
     }
 
     // ── Lock / Unlock ─────────────────────────────────────
 
+    /**
+     * Roles that work tickets through the workflow (WorkflowEngine /transition roles that act on
+     * the ticket lifecycle). Residents/departments/others only submit and view, so they may not lock.
+     */
+    private static final java.util.Set<UserRole> LOCK_ROLES = java.util.Set.of(
+        UserRole.control_room, UserRole.technician, UserRole.hospital_supervisor,
+        UserRole.region_supervisor, UserRole.system_admin, UserRole.maintenance_manager);
+
+    private void assertCanLock(User actor) {
+        if (!LOCK_ROLES.contains(actor.getRole())) {
+            throw new AccessDeniedException("Role not permitted to lock/unlock tickets");
+        }
+    }
+
     public void lock(UUID id, User actor) {
+        assertCanLock(actor);
+        // getActiveWorkOrder = WorkOrderAccessPolicy.requireReadable (tenant + role scope, 404 otherwise)
         WorkOrder wo = getActiveWorkOrder(id, actor);
         if (wo.isLocked()) throw new TicketLockedException("Already locked");
         wo.setLocked(true);
         wo.setLockedBy(actor);
         wo.setLockedAt(Instant.now());
         workOrderRepo.save(wo);
+        recordHistory(wo, wo.getStatus(), wo.getStatus(), actor, "locked");
     }
 
     public void unlock(UUID id, User actor) {
+        assertCanLock(actor);
         WorkOrder wo = getActiveWorkOrder(id, actor);
         if (!wo.isLocked()) return;
         if (!wo.getLockedBy().getId().equals(actor.getId()) &&
@@ -238,13 +596,14 @@ public class WorkOrderService {
         wo.setLockedBy(null);
         wo.setLockedAt(null);
         workOrderRepo.save(wo);
+        recordHistory(wo, wo.getStatus(), wo.getStatus(), actor, "unlocked");
     }
 
     // ── Get by ID ─────────────────────────────────────────
 
     @Transactional(readOnly = true)
     public WorkOrderResponse getById(UUID id, User actor) {
-        return mapper.toResponse(getActiveWorkOrder(id, actor));
+        return respond(getActiveWorkOrder(id, actor));
     }
 
     // ── Query ─────────────────────────────────────────────
@@ -252,15 +611,16 @@ public class WorkOrderService {
     @Transactional(readOnly = true)
     public Page<WorkOrderResponse> search(UUID centerId, UUID controlRoomId,
                                            TicketStatus status, TicketPriority priority,
-                                           UUID assignedToId, int page, int size,
+                                           UUID assignedToId, Pageable pageable,
                                            User actor) {
-        UUID tenantId = TenantContext.get();
+        WorkOrderScope scope = accessPolicy.resolveScope(actor);
+        // No visibility at all: empty page without touching the database
+        if (scope.isNone()) return Page.empty(pageable);
+
         UUID effectiveAssignedTo = tenantSecurity.resolveAssignedToFilter(actor, assignedToId);
-        Specification<WorkOrder> spec = (root, query, cb) -> {
+        // Caller filters are ANDed after the scope predicate, so they can only narrow the result
+        Specification<WorkOrder> filters = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.isNull(root.get("deletedAt")));
-            // Tenant isolation — platform admin (null) sees all
-            if (tenantId != null) predicates.add(cb.equal(root.get("tenantId"), tenantId));
             if (centerId     != null) predicates.add(cb.equal(root.get("center").get("id"),      centerId));
             if (controlRoomId!= null) predicates.add(cb.equal(root.get("controlRoom").get("id"), controlRoomId));
             if (status       != null) predicates.add(cb.equal(root.get("status"),                status));
@@ -268,11 +628,22 @@ public class WorkOrderService {
             if (effectiveAssignedTo != null) {
                 predicates.add(cb.equal(root.get("assignedTo").get("id"), effectiveAssignedTo));
             }
-            query.orderBy(cb.desc(root.get("createdAt")));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
-        return workOrderRepo.findAll(spec, PageRequest.of(page, size))
-            .map(mapper::toResponse);
+        Specification<WorkOrder> spec = accessPolicy.specFor(scope).and(filters);
+        Page<WorkOrder> page = workOrderRepo.findAll(spec, pageable);
+        // one grouped query for the escalation level of the whole page (no N+1)
+        java.util.Map<UUID, Integer> levels = new java.util.HashMap<>();
+        if (!page.isEmpty()) {
+            for (Object[] row : escalationRepo.maxLevels(page.getContent().stream().map(WorkOrder::getId).toList())) {
+                levels.put((UUID) row[0], ((Number) row[1]).intValue());
+            }
+        }
+        return page.map(w -> {
+            WorkOrderResponse r = mapper.toResponse(w);
+            if (r != null) r.setEscalationLevel(levels.getOrDefault(w.getId(), 0));
+            return r;
+        });
     }
 
     @Transactional(readOnly = true)
@@ -280,41 +651,35 @@ public class WorkOrderService {
         getActiveWorkOrder(id, actor);
         return historyRepo.findByWorkOrderIdOrderByCreatedAtAsc(id)
             .stream()
-            .map(h -> TicketHistoryResponse.builder()
-                .id(h.getId())
-                .fromStatus(h.getFromStatus())
-                .toStatus(h.getToStatus())
-                .stage(h.getStage())
-                .note(h.getNote())
-                .createdAt(h.getCreatedAt())
-                .actor(h.getActor() == null ? null : TicketHistoryResponse.ActorSummary.builder()
-                    .id(h.getActor().getId())
-                    .fullName(h.getActor().getFullName())
-                    .role(h.getActor().getRole())
-                    .build())
-                .build())
+            .map(WorkOrderService::toHistoryResponse)
             .toList();
+    }
+
+    public static TicketHistoryResponse toHistoryResponse(TicketHistory h) {
+        return TicketHistoryResponse.builder()
+            .id(h.getId())
+            .fromStatus(h.getFromStatus())
+            .toStatus(h.getToStatus())
+            .stage(h.getStage())
+            .note(h.getNote())
+            .createdAt(h.getCreatedAt())
+            .actor(h.getActor() == null ? null : TicketHistoryResponse.ActorSummary.builder()
+                .id(h.getActor().getId())
+                .fullName(h.getActor().getFullName())
+                .role(h.getActor().getRole())
+                .build())
+            .build();
     }
 
     // ── Helpers ───────────────────────────────────────────
 
     private WorkOrder getActiveWorkOrder(UUID id, User actor) {
-        WorkOrder wo = tenantSecurity.requireWorkOrder(id);
-        tenantSecurity.assertWorkOrderAccess(wo, actor);
-        return wo;
+        return accessPolicy.requireReadable(id, actor);
     }
 
     private void recordHistory(WorkOrder wo, TicketStatus from, TicketStatus to,
                                 User actor, String note) {
-        historyRepo.save(TicketHistory.builder()
-            .workOrder(wo)
-            .actor(actor)
-            .actorRole(actor.getRole())
-            .fromStatus(from)
-            .toStatus(to)
-            .stage(wo.getCurrentStage())
-            .note(InputSanitizer.clean(note, 1000))
-            .build());
+        historyWriter.record(wo, from, to, actor, note);
     }
 
     private void applyTransitionSideEffects(WorkOrder wo, TransitionRequest req,

@@ -30,7 +30,17 @@ public class XssSanitizationFilter implements Filter {
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
-        chain.doFilter(new SanitizedRequestWrapper((HttpServletRequest) request), response);
+        HttpServletRequest req = (HttpServletRequest) request;
+        // Multipart bodies carry binary file content and are parsed by Spring's multipart resolver;
+        // buffering/rewriting them corrupts files and breaks part parsing (500). Text fields of
+        // multipart requests are cleaned server-side (InputSanitizer) by the services that use them,
+        // and filenames are validated by AttachmentService.
+        String contentType = req.getContentType();
+        if (contentType != null && contentType.toLowerCase(Locale.ROOT).startsWith("multipart/")) {
+            chain.doFilter(request, response);
+            return;
+        }
+        chain.doFilter(new SanitizedRequestWrapper(req), response);
     }
 
     // ─────────────────────────────────────────────────────────────

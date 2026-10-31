@@ -25,7 +25,7 @@ public class CreateUserRequest {
     @Email @Size(max = 255)
     private String email;               // optional
 
-    @NotBlank @Size(min = 8)
+    @NotBlank @Size(min = 8, max = 128)
     private String password;
 
     @NotBlank @Size(max = 200)
@@ -41,6 +41,9 @@ public class CreateUserRequest {
     private UserRole role;
 
     private UUID regionId;
+
+    /** Platform admin only, when no center/region/control room fixes the tenant. Ignored otherwise. */
+    private UUID tenantId;
     private UUID centerId;
     private UUID controlRoomId;         // primary control room link
     private List<UUID> controlRoomIds;  // multiple control rooms
